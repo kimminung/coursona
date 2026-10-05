@@ -69,7 +69,8 @@ let package = Package(
         ),
         .target(
             name: "CoursonaSplat",
-            dependencies: ["CoursonaCore"],
+            // CoursonaFace(C5, T-503): BustEntity/TextureBuilder 와 같은 패턴으로 캡을 닫은 뒤 "얼굴면 밖" 을 가른다.
+            dependencies: ["CoursonaCore", "CoursonaFace"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
@@ -99,7 +100,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CoursonaKitTests",
-            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture"],
+            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture", "CoursonaSplat"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
