@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **100개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사도 이제 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기 빌드만 남음) — 아래 "구현된 것"에 그 경위를 적었다. 화면 UI 는 아직 자리표시자이고, 캡처 세션의 일부(카메라 보정 데이터 저장, 인물 매트)와 텍스처·전송은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **104개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증도 이제 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기 빌드만 남음) — 아래 "구현된 것"에 그 경위를 적었다. 화면 UI 는 아직 자리표시자이고, 캡처 세션의 일부(카메라 보정 데이터 저장, 인물 매트)와 텍스처·전송은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -31,8 +31,9 @@
 - **선택 2컷(눈 감기·입 벌림) 게이팅 + 셰이프 직접 치환(F7)** — `ShotKind` 에 `eyesClosed`·`mouthOpen` 을 추가해 A 등급(`FaceCaptureSession`, ARKit 블렌드셰이프 가중치)·B 등급(`PhotoCaptureSession`, Vision 눈/입 랜드마크 비율) 둘 다 이 두 컷을 찍을 수 있다. 찍히면 `UserShapeDeltas` 가 그 컷에서 `eyeBlinkLeft/Right`·`jawOpen` 셰이프 델타를 **직접** 읽어 치환한다 — 기존의 미소 컷 기반 진폭 스케일 보정(F10)보다 정확하다(합성 테스트로 확인: 사용자 셰이프가 템플릿 델타의 단순 배율이 아닐 때 스케일 보정은 4배 더 부정확하다). 안 찍으면 조용히 F10 으로 빠진다.
 - **C 등급(사진 1장) 적합성 검사** — `PhotoSuitability`: 정면(yaw/pitch)·눈 뜸·입 다묾·밝기·얼굴 크기를 B 등급과 같은 임계값으로 판정, 순수 로직이라 Vision 없이도 단위 테스트가 된다.
 - **단안 피팅(B·C 등급)은 이미 동작한다** — C0 에서 포팅한 `SparseFitter`를 `FaceFitter.fit` 이 사진 전용(희소) 번들에 자동으로 연결해 준다. Vision 8점(눈꼬리·코끝·입꼬리·턱) 대응 + 여러 컷의 랜드마크 광선을 삼각측량해 실제 깊이를 복원하고(ML 깊이 모델 없이도 코 깊이 오차 0.37mm), 3D RBF 로 두상 전체에 전파한다. **코드도 테스트도 이미 있었는데 로드맵 문서에 반영이 안 돼 있었다** — 이번에 확인하고 C4 를 완료로 올렸다. 자세한 경위는 `Docs/TechPRD.md` §6.4 "구현 노트(C4)".
-- **검증**: `cd CoursonaKit && swift test` → **100개 테스트, 22개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
-- **남은 것(C3)**: A 등급 세션의 `AVDepthData.cameraCalibrationData` 저장·깊이 5/5 검증, B 등급의 인물 매트(`GeneratePersonSegmentationRequest`)·캡처 품질 점수 게이트, Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용).
+- **저장 전 깊이 검증(T-301)** — `DepthCoverage`: A 등급 필수 5컷 중 깊이가 빠진 컷을 찾아 어떤 컷을 다시 찍어야 하는지 한글로 안내한다. TrueDepth 깊이는 색 프레임과 주기가 달라 "찍었는데 깊이가 없는" 컷이 생길 수 있어서 따로 확인이 필요했다. `coursona-validate --fit` 에도 연결해 실제 번들을 열 때 바로 보인다.
+- **검증**: `cd CoursonaKit && swift test` → **104개 테스트, 23개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **남은 것(C3)**: B 등급의 인물 매트(`GeneratePersonSegmentationRequest`)·캡처 품질 점수 게이트, Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용). `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — 기존 경험적 깊이 보정(`DepthRegistration`)이 이미 잘 동작하고, calibration 데이터의 실제 필드는 TrueDepth 실기기 없이는 검증할 방법이 없어서 섣불리 손대는 게 더 위험하다고 판단했다.
 
 ### 지금 이 앱을 띄우면 보이는 것
 
@@ -142,7 +143,7 @@ Docs/
   stitch_new_project_starter 2/    Stitch 목업 2차본(대안 테마 + 일부 폐기분)
 CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트되는 코드
   Sources/CoursonaCore           모델·포맷·ARKit 52 타입·수학(+ FaceSurfacePartition, Geometry.boundaryLoops)
-  Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier, 선택 2컷 게이팅, PhotoSuitability(C 등급)
+  Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier, 선택 2컷 게이팅, PhotoSuitability(C 등급), DepthCoverage(저장 전 깊이 검증)
   Sources/CoursonaML             온디바이스 모델 래퍼(C3 에서 채움)
   Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣·UserShapeDeltas/F7)
   Sources/CoursonaFace           얼굴면 완성 — CapBuilder·SelfIntersectionCheck(C1·C2 구현됨)
@@ -152,7 +153,7 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
   Sources/CoursonaIO             패키지·전송·zip
   Sources/CoursonaValidate       템플릿 계약 검사
-  Tests/CoursonaKitTests         100개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests 포함)
+  Tests/CoursonaKitTests         104개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests 포함)
 coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
@@ -164,7 +165,7 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 ```bash
 cd CoursonaKit
 swift build        # 11개 모듈 + CLI 빌드
-swift test          # 100개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성까지 전부 로컬에서 돈다
+swift test          # 104개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
@@ -176,7 +177,7 @@ swift test          # 100개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C0 | 프로젝트 셋업, `CoursonaKit` 포팅 | ✅ |
 | C1 | 한 메시·투명 흉상(분리 엔티티 폐기) | ✅ |
 | C2 | 얼굴면 완성(A 등급) | ✅ |
-| C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사(`PhotoSuitability`) 완료, 카메라 보정 데이터·인물 매트·Vision 조밀 대응·단안 깊이 모델은 남음 |
+| C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사(`PhotoSuitability`)·저장 전 깊이 검증(`DepthCoverage`) 완료, 카메라 보정 데이터(의도적 보류)·인물 매트·Vision 조밀 대응·단안 깊이 모델은 남음 |
 | C4 | 단안 피팅(B·C 등급) | ✅ (코드·테스트는 C0 포팅분이 이미 만족, 🧪 실기기 빌드만 남음) |
 | C5 | 텍스처·입체감(스플랫) | ⏳ |
 | C6 | 라이브 구동(거울) | ⏳ |

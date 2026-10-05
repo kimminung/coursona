@@ -20,6 +20,7 @@ import CoursonaValidate
 import CoursonaTexture
 import CoursonaFit
 import CoursonaFace
+import CoursonaCapture
 #if os(macOS)
 import CoursonaRig
 import RealityKit
@@ -176,6 +177,9 @@ func run() -> Int32 {
             let (template, dir) = try loadRepoTemplate(override: args.count >= 4 ? args[args.startIndex + 3] : nil)
             defer { try? FileManager.default.removeItem(at: dir) }
             print("번들: \(bundle.meta.device) · 컷 \(bundle.shots.map(\.kind.rawValue).joined(separator: "+")) · sparse \(bundle.meta.sparse) · 깊이 \(bundle.shots.filter { $0.depth != nil }.count)컷")
+            // T-301: 필수 5컷 전부 깊이가 있는지(저장 전 검증과 같은 기준).
+            let depthCov = DepthCoverage.check(bundle)
+            print("  깊이 검증(T-301): " + (depthCov.isComplete ? "통과(필수 컷 전부 깊이 있음)" : "⚠︎ " + (depthCov.message ?? "")))
             print("템플릿: \(template.manifest.id)@\(template.manifest.version) · 정점 \(template.vertexCount)")
             let identity = try FaceFitter.fit(bundle: bundle, template: template)
             guard let q = identity.quality else { print("품질 지표 없음"); return 1 }

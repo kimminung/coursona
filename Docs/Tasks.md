@@ -43,7 +43,7 @@
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-301 | `FaceCaptureSession` 7컷(필수 5+선택 2), `AVDepthData.cameraCalibrationData` 저장, 저장 시 5/5 깊이 검증 | §6.3 A | 🔄 — `ShotKind`에 `eyesClosed`/`mouthOpen`(선택, `isOptional`) 추가, `FaceFrameStatus.eyeBlinkAvg`/`jawOpenWeight` + `CaptureGate` 임계값으로 두 컷 게이팅 완료(F7 이 바로 이 컷을 씀). `cameraCalibrationData` 저장·깊이 5/5 검증은 아직 — 🧪 실기기에서 확인 |
+| T-301 | `FaceCaptureSession` 7컷(필수 5+선택 2), `AVDepthData.cameraCalibrationData` 저장, 저장 시 5/5 깊이 검증 | §6.3 A | 🔄 — `ShotKind`에 `eyesClosed`/`mouthOpen`(선택, `isOptional`) 추가, `FaceFrameStatus.eyeBlinkAvg`/`jawOpenWeight` + `CaptureGate` 임계값으로 두 컷 게이팅 완료(F7 이 바로 이 컷을 씀). **저장 시 5/5 깊이 검증**도 완료: `CoursonaCapture/DepthCoverage.swift`(필수 5컷 중 깊이 없는 컷을 집어 한글 안내 문장까지 냄, `coursona-validate --fit` 에도 연결), 단위 테스트 4개. `cameraCalibrationData` 저장은 **의도적으로 미룬다** — `DepthRegistration`(C0 포팅분)이 이미 경험적 오프셋 보정으로 잘 동작하고, calibration 데이터의 실제 필드 해석(좌표 규약·부호)은 TrueDepth 실기기 없이 검증할 방법이 없어 섣불리 손대면 초상의 회전 버그 같은 걸 또 만들 위험이 크다 — 🧪 실기기 확보 후 재검토 |
 | T-302 | `PhotoCaptureSession` 확장: B 등급 5+2컷, `GeneratePersonSegmentationRequest(.accurate)` 매트, `VNDetectFaceCaptureQualityRequest` 점수 게이트 | §6.3 B | 🔄 — Vision 눈/입 랜드마크 바운딩박스로 `eyeAspectRatio`/`mouthOpenRatio` 계산 + 게이팅으로 두 선택 컷 지원 완료. 인물 매트·캡처 품질 점수 게이트는 아직 |
 | T-303 | C 등급: `PhotosPicker`/파일 가져오기 → 정면 1장 적합성 검사(정면·눈 뜸·입 다묾·밝기) | §6.3 C | 🔄 — `CoursonaCapture/PhotoSuitability.swift`: 평가 로직은 Vision 비의존 순수 함수(B 등급과 **같은 `PhotoCaptureGate` 임계값** 재사용, 새 상수 없음) + `check(_:)`(Vision 래퍼). 단위 테스트 8개. `PhotosPicker` SwiftUI 연결은 C8 화면 작업 때 |
 | T-304 | `VisionCorrespondence`: 템플릿 패치를 가상 카메라로 투영해 Vision 76점 영역과 최근접 대응 생성·캐시 | §6.3 | ⏳ |

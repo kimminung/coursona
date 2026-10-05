@@ -93,7 +93,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "coursona-validate",
-            dependencies: ["CoursonaCore", "CoursonaIO", "CoursonaValidate", "CoursonaTexture", "CoursonaRig", "CoursonaFit", "CoursonaFace"],
+            dependencies: ["CoursonaCore", "CoursonaIO", "CoursonaValidate", "CoursonaTexture", "CoursonaRig", "CoursonaFit", "CoursonaFace", "CoursonaCapture"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
