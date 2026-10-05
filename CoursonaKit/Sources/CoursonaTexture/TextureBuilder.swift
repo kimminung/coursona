@@ -70,8 +70,19 @@ public struct TextureBuildOptions: Sendable, Equatable {
     public var softMinCoverage: Float = 0.12
     /// Metal 백엔드 사용 (없거나 실패하면 CPU)
     public var preferMetal = true
+    /// C5(T-501) `faceOnly` 프리셋: 얼굴 패치·눈꺼풀/입술 안쪽·캡 섬만 전체 해상도로 투영하고, 나머지(두피·목·어깨)는
+    /// 이 단계에서 아예 건너뛴다(4단계의 기존 채움 로직이 메운다 — 새 채움 코드가 필요 없다). 나머지 영역 색은
+    /// `TextureBuildResult.splatColor`(저해상도, 스플랫 초기화용, `splatColorSize`)로 따로 낸다 — 얼굴 쪽
+    /// `lowResSize`(접합·페더용, 기본 256) 와는 별개 해상도라 서로 안 건드린다. **Metal 백엔드는 이 옵션을 모른다** —
+    /// 켜져 있으면 패리티가 깨지므로 CPU 로 강제한다(성능은 어차피 얼굴만 돌려서 전체보다 빠르다).
+    public var faceOnly = false
+    /// §6.5: 나머지 영역 스플랫 색 추출용 한 장의 크기(기본 512²).
+    public var splatColorSize = 512
     public init() {}
     public static func preset(size: Int) -> TextureBuildOptions { var o = TextureBuildOptions(); o.size = size; return o }
+    public static func faceOnlyPreset(size: Int = 2048, splatColorSize: Int = 512) -> TextureBuildOptions {
+        var o = TextureBuildOptions(); o.size = size; o.faceOnly = true; o.splatColorSize = splatColorSize; return o
+    }
 }
 
 public struct TextureBuildResult: Sendable {
@@ -90,6 +101,8 @@ public struct TextureBuildResult: Sendable {
     public var rejectedTexels = 0
     public var stageSeconds: [Double]
     public var backend: String
+    /// C5(T-501) `faceOnly` 일 때만: 얼굴 밖(두피·목·어깨) 색 — 스플랫 초기화용 저해상도 한 장. 평소엔 nil.
+    public var splatColor: RGBAImage? = nil
     public var summary: String {
         String(format: "%d² · 관측 %.0f%% · 대칭 %.0f%% · 채움 %.0f%% · 접합 %.1f→%.1f/255 · %.1f s (%@)",
                albedo.width, quality.observedRatio * 100, quality.mirroredRatio * 100, quality.filledRatio * 100,
@@ -136,7 +149,8 @@ public enum TextureBuilder {
         // `t` 가 캡이 닫힌 템플릿을 가리킨다. 구멍이 없으면(지금의 합성 템플릿) 캡이 전부 nil 이라 그대로다.
         var fittedForCaps = t
         if identity.positions.count == t.vertexCount { fittedForCaps.positions = identity.positions }
-        let t = CapBuilder.addingCaps(to: fittedForCaps).template
+        let capResult = CapBuilder.addingCaps(to: fittedForCaps)
+        let t = capResult.template
         let render = t.makeRenderMesh()
         let rPos = render.expand(t.positions)
         let rNrm = Geometry.vertexNormals(positions: rPos, indices: render.indices)
@@ -171,6 +185,12 @@ public enum TextureBuilder {
         let triLipInner = triAll(Set(t.manifest.group(.lipInner)))
         let triSoftSkin: [Bool] = (0..<(render.indices.count / 3)).map { tri in
             !triPatch[tri] && !triScalp[tri] && !triShoulders[tri] && !triLidInner[tri] && !triLipInner[tri]
+        }
+        // C5(T-501) faceOnly: 캡(눈·입) 삼각형은 `capResult` 가 가진 구간(정점 id 3개 단위, `makeRenderMesh` 가
+        // 삼각형 순서를 보존하므로 render mesh 에서도 같은 삼각형 번호)으로 바로 안다 — 새로 분류할 필요가 없다.
+        let capTriRanges: [Range<Int>] = capResult.caps.map { $0.triangleIndexRange.lowerBound / 3 ..< $0.triangleIndexRange.upperBound / 3 }
+        let isFaceTri: [Bool] = (0..<(render.indices.count / 3)).map { tri in
+            triPatch[tri] || triLidInner[tri] || triLipInner[tri] || capTriRanges.contains { $0.contains(tri) }
         }
         let mouthUV: SIMD2<Float>? = t.manifest.landmark(.lipUpperMid).flatMap { srcID in
             render.sourceIndex.firstIndex(of: Int32(srcID)).map { render.uvs[$0] }
@@ -213,6 +233,27 @@ public enum TextureBuilder {
         if o.cheekRenormalize, cheekN >= 10, o.delight > 0 {
             cheekGain = simd_clamp(cheekRaw / simd_max(SIMD3(repeating: 1e-4), cheekDelit), SIMD3(repeating: 0.5), SIMD3(repeating: 2))
         }
+        // C5(T-501) faceOnly: 얼굴 밖(두피·목·어깨) 색을 한 장(기본 512²) 뽑는다 — 스플랫 초기화용이라
+        // 접합·페더 보정 없이 컷 가중 평균만 쓴다(§6.5, 연속 표면이 아니라 삼각형별 이산 스플랫이라 이음매가 안 보인다).
+        var splatColor: RGBAImage? = nil
+        if o.faceOnly {
+            let sz = max(16, o.splatColorSize)
+            let splatRaster = TexelRaster(render: render, size: sz, supersample: 1)
+            var img = RGBAImage(width: sz, height: sz, fill: SIMD4(0, 0, 0, 0))
+            for i in 0..<(sz * sz) {
+                guard let g = splatRaster.interpolate(i, positions: rPos, normals: rNrm, uvs: render.uvs, indices: render.indices) else { continue }
+                var acc = SIMD3<Float>.zero, wsum: Float = 0
+                for ctx in shots {
+                    guard let smp = sample(ctx, pos: g.pos, nrm: g.nrm, uv: g.uv, mouthUV: mouthUV, o: o) else { continue }
+                    let f = TextureLighting.delightFactor(shade: smp.shade, strength: o.delight)
+                    acc += simd_min(SIMD3(repeating: 1), smp.color * f) * smp.weight; wsum += smp.weight
+                }
+                guard wsum > 0 else { continue }
+                let c = simd_clamp(acc / wsum, .zero, SIMD3(repeating: 1))
+                img[i % sz, i / sz] = SIMD4(UInt8(c.x * 255), UInt8(c.y * 255), UInt8(c.z * 255), 255)
+            }
+            splatColor = img
+        }
         stageDone(); tick(.projection, 1)
 
         // ---- 3 accumulate (전체 해상도) ------------------------------------------------------
@@ -232,7 +273,8 @@ public enum TextureBuilder {
         var backend = "CPU"
         var accumulated = false
         #if canImport(Metal)
-        if o.preferMetal, let gpu = MetalTextureBackend.shared {
+        // faceOnly 는 Metal 커널이 모르는 옵션이라(얼굴 밖 건너뛰기) CPU 로 강제한다 — 안 그러면 패리티가 깨진다.
+        if o.preferMetal, !o.faceOnly, let gpu = MetalTextureBackend.shared {
             do {
                 try gpu.accumulate(raster: raster, render: render, positions: rPos, normals: rNrm, shots: shots, gains: gains, feather: feather,
                                    mouthUV: mouthUV, cheekGain: cheekGain, options: o, albedo: &albedo, state: &state) { f in tick(.accumulate, f * 0.9) }
@@ -253,6 +295,12 @@ public enum TextureBuilder {
                         var acc = SIMD3<Float>.zero, wsum: Float = 0
                         for sy in 0..<ssn { for sx in 0..<ssn {
                             let k = (y * ssn + sy) * G + (x * ssn + sx)
+                            // faceOnly: 얼굴 밖 삼각형은 다중 컷 샘플링을 아예 생략한다 — "관측 없음" 으로 남아
+                            // 4단계(기존 채움: 두피 평균·목 피부색·어깨→목)가 그대로 메운다, 새 코드 없이.
+                            if o.faceOnly {
+                                let tri = Int(raster.triID[k])
+                                guard tri >= 0, isFaceTri[tri] else { continue }
+                            }
                             guard let g = raster.interpolate(k, positions: rPos, normals: rNrm, uvs: render.uvs, indices: render.indices) else { continue }
                             for (s, ctx) in shots.enumerated() {
                                 guard let smp = sample(ctx, pos: g.pos, nrm: g.nrm, uv: g.uv, mouthUV: mouthUV, o: o) else { continue }
@@ -380,7 +428,7 @@ public enum TextureBuilder {
         for c in shots { lights[c.kind] = c.light; if c.depth != nil { offsets[c.kind] = c.depthOffset } }
         return TextureBuildResult(albedo: outAlbedo, mask: outMask, quality: q, usedShots: shots.map(\.kind), lights: lights, depthOffsets: offsets,
                                   seamDeltaBefore: gains.seamDeltaBefore, cheekGain: cheekGain, hairColor: hair, skinColor: skin, rejectedTexels: rejected,
-                                  stageSeconds: stageSeconds, backend: backend)
+                                  stageSeconds: stageSeconds, backend: backend, splatColor: splatColor)
     }
 
     // MARK: 컷 컨텍스트

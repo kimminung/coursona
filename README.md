@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 착수**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **118개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 이제 캡(눈·입) 전용 UV 섬으로 텍스처 작업(C5)을 시작했다. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **122개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 이제 캡(눈·입) 전용 UV 섬으로 텍스처 작업(C5)을 시작했다. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -35,10 +35,11 @@
 - **B 등급 캡처 품질·인물 매트 게이트(T-302)** — `DetectFaceCaptureQualityRequest`(조명·선명도·중앙 위치 점수 ≥ 0.5)와 `GeneratePersonSegmentationRequest`(얼굴 상자를 5×5 그리드로 샘플링해 "실제로 사람인가" 비율)로 게이팅. 전체 매트 이미지(배경 제거용 알파 채널) 저장은 **못 한다** — 그 접근자가 이 프로젝트 배포 타깃(OS 26)보다 높은 OS 27+ 를 요구하는 걸 직접 컴파일해서 확인했다. 점 단위 샘플링(`pixel(at:)`)은 OS 26 에서 된다는 것도 같은 방식으로 확인하고 그 선까지만 썼다 — `PersonCoverage.swift`, Vision 타입과 분리된 순수 로직이라 단위 테스트 가능.
 - **iPad 가로 거치 기록(T-306)** — `CaptureOrientation`(7종)을 `CaptureShotMeta.orientation` 에 기록. `UIDevice.current.orientation` 을 그대로 적을 뿐, **영상·깊이·좌표 회전 수학은 조금도 바꾸지 않았다** — 초상(Chosang)의 회전 버그가 바로 그 수학을 실기기 검증 없이 건드려서 난 문제였기 때문에 가장 조심한 부분이다. `beginGeneratingDeviceOrientationNotifications()` 를 안 부르면 이 값이 항상 "모름"이라는 게 Apple 문서에 명시돼 있다 — 실기기 없이는 몰랐을 함정이라 세션 시작·종료에 추가했다.
 - **캡 전용 UV 섬(C5, T-501 선행)** — `CapBuilder`가 `cap_eye_L`/`cap_eye_R`/`cap_mouth` UV 영역이 있으면 그 안에 전용 원형 UV 섬을 만든다. 기존 `lid_L`/`lid_R`/`lip`은 눈꺼풀·입술 **피부** 영역이라 용도가 달라 재사용하지 않고 새 키로 분리했다 — 재사용했으면 캡이 주변 피부 텍셀을 그대로 베끼는, 지금과 같은 문제가 또 생겼을 것이다. 키가 없으면(지금의 모든 템플릿) 옛 동작(바깥 고리 UV 상속)으로 조용히 되돌아간다.
-- **눈·입 캡 내용물 투영(T-502)** — 전용 코드 없이 됐다. `TextureBuilder`가 텍스처를 만들기 전에 `BustEntity`와 같은 방식으로 눈·입 구멍을 먼저 닫아서, 캡 삼각형도 다른 모든 영역과 **같은** 다중 컷 카메라 투영 파이프라인을 그대로 받는다 — 캡이 실제 눈·입이 열린 3D 자리에 있으니 "눈 뜸" 컷을 보면 눈 내용물이, "입 벌림" 컷을 보면 입 내용물이 자연히 투영된다. `CoursonaTexture`가 `CoursonaFace`에 새로 의존(순환 없음). 구멍 없는 지금의 합성 템플릿으로는 캡이 전부 생기지 않아 기존 118개 테스트가 전부 그대로 통과(회귀 없음) — 다만 이는 "구멍이 실제로 있을 때 제대로 투영되는지"는 아직 전용 테스트가 없다는 뜻이기도 하다(실제 블렌더 템플릿이 생기면 눈으로 확인).
-- **검증**: `cd CoursonaKit && swift test` → **118개 테스트, 26개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **눈·입 캡 내용물 투영(T-502)** — 전용 코드 없이 됐다. `TextureBuilder`가 텍스처를 만들기 전에 `BustEntity`와 같은 방식으로 눈·입 구멍을 먼저 닫아서, 캡 삼각형도 다른 모든 영역과 **같은** 다중 컷 카메라 투영 파이프라인을 그대로 받는다 — 캡이 실제 눈·입이 열린 3D 자리에 있으니 "눈 뜸" 컷을 보면 눈 내용물이, "입 벌림" 컷을 보면 입 내용물이 자연히 투영된다. `CoursonaTexture`가 `CoursonaFace`에 새로 의존(순환 없음). 구멍 없는 지금의 합성 템플릿으로는 캡이 전부 생기지 않아 기존 테스트가 전부 그대로 통과(회귀 없음) — 다만 이는 "구멍이 실제로 있을 때 제대로 투영되는지"는 아직 전용 테스트가 없다는 뜻이기도 하다(실제 블렌더 템플릿이 생기면 눈으로 확인).
+- **`faceOnly` 옵션(T-501 완료)** — 얼굴 패치·눈꺼풀/입술 안쪽·캡만 전체 해상도로 투영하고, 나머지(두피·목·어깨)는 그 단계에서 샘플링 자체를 건너뛴다 — 관측 없음으로 남아 **기존** 채움 로직(두피 평균·목 피부색 등)이 그대로 메운다, 새 코드 없이. 나머지 색은 `splatColor`(기본 512², 접합·페더 없이 평균만 — 스플랫은 이산적이라 이음매가 안 보임)로 따로 낸다. Metal 백엔드는 이 로직을 몰라 패리티가 깨지므로 `faceOnly` 켜지면 CPU로 강제한다 — 솔직하게 느리더라도 정확한 쪽을 택했다.
+- **검증**: `cd CoursonaKit && swift test` → **122개 테스트, 27개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
 - **남은 것(C3)**: Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용), 배경 제거용 전체 인물 매트(OS 27 배포 타깃으로 올릴 때 재검토). `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — 기존 경험적 깊이 보정(`DepthRegistration`)이 이미 잘 동작하고, calibration 데이터의 실제 필드는 TrueDepth 실기기 없이는 검증할 방법이 없어서 섣불리 손대는 게 더 위험하다고 판단했다.
-- **남은 것(C5)**: `TextureBuilder`의 `faceOnly` 옵션(지금은 UV 전체를 늘 풀 해상도로 처리 — 얼굴+캡 섬만 2k/4k, 나머지는 512² 한 장으로 줄이는 최적화는 미구현), 스플랫 바인딩·렌더(T-503~505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
+- **남은 것(C5)**: 스플랫 바인딩·렌더(T-503~505), 실제 2k/4k·실기기에서 `faceOnly`의 속도 이득 측정(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
 
 ### 지금 이 앱을 띄우면 보이는 것
 
@@ -175,7 +176,7 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
   Sources/CoursonaIO             패키지·전송·zip
   Sources/CoursonaValidate       템플릿 계약 검사
-  Tests/CoursonaKitTests         118개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests 포함)
+  Tests/CoursonaKitTests         122개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests 포함)
 coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
@@ -187,7 +188,7 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 ```bash
 cd CoursonaKit
 swift build        # 11개 모듈 + CLI 빌드
-swift test          # 118개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬까지 전부 로컬에서 돈다
+swift test          # 122개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
@@ -201,7 +202,7 @@ swift test          # 118개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C2 | 얼굴면 완성(A 등급) | ✅ |
 | C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사·저장 전 깊이 검증·B 등급 캡처 품질·인물 매트 게이트·iPad 가로 거치 기록 완료, 카메라 보정 데이터(의도적 보류)·Vision 조밀 대응·단안 깊이 모델·전체 인물 매트(OS 27+)·🧪 실기기 체크리스트는 남음 |
 | C4 | 단안 피팅(B·C 등급) | ✅ (코드·테스트는 C0 포팅분이 이미 만족, 🧪 실기기 빌드만 남음) |
-| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬(T-501 선행)·눈입 캡 투영(T-502) 완료, `faceOnly` 옵션·스플랫은 남음 |
+| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502) 완료, 스플랫 바인딩·렌더(T-503~505)는 남음 |
 | C6 | 라이브 구동(거울) | ⏳ |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | ⏳ |
 | C8 | 검수·마감 | ⏳ |
