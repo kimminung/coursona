@@ -222,10 +222,20 @@ M6 이후 F2 → F3 → F5 → F6 → F8 → F9 공통(F4 는 M5 가 대신, F7 
 > - **색**: `TextureBuilder.faceOnlyPreset` 이 만든 `splatColor` 에서 그 자리의 UV 로 샘플링(알파>0 이면 관측으로 친다), 없으면 하나의 기본 피부색으로 떨어진다. **TechPRD 의 "두피=관측 두피 평균·목귀=얼굴 피부 기준색·어깨=템플릿 옷 평균" 처럼 영역별로 다른 기본색을 쓰는 건 아직 안 했다** — 옷 평균색을 낼 소스(텍스처·라이브러리)가 아직 없어서 전부 피부색 하나로 단순화했다. 실제 옷 텍스처가 생기면 그때 영역별 기본색을 나눈다.
 > - **`splats.bin`**: `SplatFile` 이 `BustMeshFile` 과 같은 이진 규칙(매직 4바이트 + u32 헤더들 + 평평한 배열)으로 "데이터"(위치·스케일·회전·색·불투명도, 14 float+패딩 2개=64 B)와 "바인딩"(삼각형·바리센트릭·오프셋, 변형 시 재굽기용, v1.1 대비)을 분리 저장한다. `GaussianSplatResource` 가 실제로 기대하는 바이트 레이아웃은 **아직 확인 안 했다** — T-504 에서 RealityKit API 를 먼저 문서로 확인하고 필요하면 이 레이아웃을 그쪽에 맞게 바꾼다.
 > 단위 테스트 10개(`SplatBinderTests` 6, `SplatFileTests` 4) — 두 테스트 다 구멍이 필요 없는 `SyntheticTemplate.make()`(두피·목·어깨 그룹이 이미 있다)로 바로 됐다, C1 의 캡 전용 구멍-격자 픽스처가 필요 없었다.
+>
+> **구현 노트(C5, T-504, 2026-10-06) — 실제로 빌드해서 확인한 제품 수준 제약 두 가지.** `GaussianSplatResource.BufferResource` 브리지(`SplatGPUBridge`)는 Apple 공식 문서의 "Creating a Splat Entity" 예제(`DocumentationSearch` 로 전문을 그대로 확인)와 같은 레이아웃으로 짰다 — `LowLevelBuffer` 하나에 인터리브 14 float(위치3·스케일3·회전4(**r, x, y, z 순서** — `splats.bin` 의 x,y,z,r 순서와 다르다, GPU 레이아웃은 매번 `[SplatRecord]` 에서 새로 짜지 보관 포맷을 그대로 못 쓴다) · 불투명도1 · 구면조화 0차(색)3), `GaussianSplatResource.BufferDescriptor` 5개로 각 속성 자리를 알려주고 `GaussianSplatResource.BufferResource(count:position:scale:rotation:opacity:sphericalHarmonics:)` 로 감싼다.
+> 실제로 빌드해보기 전까지는 몰랐던 제약이 둘 나왔다:
+> 1. **`GaussianSplatComponent`/`GaussianSplatResource` 는 `@available(macOS 27.0, *)` 다** — 이 프로젝트 배포 타깃(OS 26)보다 높다. Apple7 GPU 지원 여부(문서에 명시)와는 별개의, OS 버전 자체의 제약이다.
+> 2. **iOS SDK 에는 이 타입들이 아예 없다.** iPhone 시뮬레이터로 빌드하니 "cannot find type 'GaussianSplatComponent' in scope" — `@available` 경고가 아니라 **심볼 자체가 없다**(모듈에 안 들어있다). 지금 확인 가능한 범위에서는 macOS(그리고 아마 visionOS) 전용으로 보인다.
+> **이건 제품 목표에 실제로 영향을 준다**: TechPRD 1번 목표가 "Vision Pro 페르소나 경험을 iPhone·iPad·Mac 전부에서" 인데, `GaussianSplatComponent` 로 만드는 네이티브 가우시안 스플랫 입체감은 **지금 SDK 기준 iPhone·iPad 에서 아예 쓸 수 없다** — Mac(OS 27+, Apple7 GPU) 에서만 된다. iOS 에서는 처음부터 끝까지 고스트 파트 폴백(§6.6 이 이미 정의한 그 폴백)이 "임시 대안" 이 아니라 **사실상 기본 경로**가 된다. 이 격차가 나중에 iOS SDK 업데이트로 메워질 수도 있지만, 지금 시점(2026-10-06, 이 Xcode 환경)에서는 그렇다 — 코드로 직접 확인한 사실이라 TechPRD §4 목표 문구를 과장하지 않기 위해 여기 정직하게 남긴다.
+> 대응: `SplatGPUBridge` 는 실제 구현을 `#if os(macOS)` 로만 감싸고, `isSupported(device:)`(OS 27 미만·iOS·Apple7 미만 GPU 전부 false) 는 **두 플랫폼 공통**으로 가용성 체크 없이 부를 수 있게 뒀다 — 호출부(미래의 `BustEntity`/C6 배선)가 플랫폼을 가리지 않고 먼저 물어보고, false 면 고스트 파트로 가면 된다. `makeComponent` 자체는 iOS 에 선언할 방법이 없다(반환 타입이 없는 타입이라).
+> 단위 테스트 4개(`SplatGPUBridgeTests`) — `isSupported()` 는 항상 돌고, 나머지는 `#if os(macOS)` + `#available(macOS 27, *)` 안에서만 돈다. 이 개발 Mac 이 macOS 27.0.1(Apple M3, Apple7 이상)이라 실제로 `GaussianSplatComponent` 를 만들어 보고 통과를 확인했다 — 컴파일만 되고 안 돌려본 코드가 아니다.
 
 ### 6.6 스플랫 — 얼굴면 밖 입체감 (`CoursonaSplat`)
 
 학습 없음, 바인딩 + 초기화만.
+
+> 🧪 **실기기·빌드로 확인(T-504, 2026-10-06)**: `GaussianSplatComponent` 는 iOS SDK 에 타입 자체가 없고(아마 macOS·visionOS 전용) `@available(macOS 27, *)` 다. 즉 **지금 SDK 기준 iPhone·iPad 는 이 절의 네이티브 스플랫 렌더를 아예 못 쓴다** — Mac(OS 27+, Apple7 GPU)만 된다. §4 목표 1번("iPhone·iPad·Mac 전부")의 "입체감" 부분은 iOS 에서 고스트 파트 폴백이 사실상 기본 경로라는 뜻이다. 자세한 내용은 아래 "구현 노트(C5, T-504)".
 
 | 항목 | 결정 |
 |---|---|

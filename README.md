@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **132개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)에 이어 스플랫 바인딩(얼굴면 밖 입체감)까지 끝났다. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **136개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -38,9 +38,10 @@
 - **눈·입 캡 내용물 투영(T-502)** — 전용 코드 없이 됐다. `TextureBuilder`가 텍스처를 만들기 전에 `BustEntity`와 같은 방식으로 눈·입 구멍을 먼저 닫아서, 캡 삼각형도 다른 모든 영역과 **같은** 다중 컷 카메라 투영 파이프라인을 그대로 받는다 — 캡이 실제 눈·입이 열린 3D 자리에 있으니 "눈 뜸" 컷을 보면 눈 내용물이, "입 벌림" 컷을 보면 입 내용물이 자연히 투영된다. `CoursonaTexture`가 `CoursonaFace`에 새로 의존(순환 없음). 구멍 없는 지금의 합성 템플릿으로는 캡이 전부 생기지 않아 기존 테스트가 전부 그대로 통과(회귀 없음) — 다만 이는 "구멍이 실제로 있을 때 제대로 투영되는지"는 아직 전용 테스트가 없다는 뜻이기도 하다(실제 블렌더 템플릿이 생기면 눈으로 확인).
 - **`faceOnly` 옵션(T-501 완료)** — 얼굴 패치·눈꺼풀/입술 안쪽·캡만 전체 해상도로 투영하고, 나머지(두피·목·어깨)는 그 단계에서 샘플링 자체를 건너뛴다 — 관측 없음으로 남아 **기존** 채움 로직(두피 평균·목 피부색 등)이 그대로 메운다, 새 코드 없이. 나머지 색은 `splatColor`(기본 512², 접합·페더 없이 평균만 — 스플랫은 이산적이라 이음매가 안 보임)로 따로 낸다. Metal 백엔드는 이 로직을 몰라 패리티가 깨지므로 `faceOnly` 켜지면 CPU로 강제한다 — 솔직하게 느리더라도 정확한 쪽을 택했다.
 - **스플랫 바인딩(T-503)** — `SplatBinder`: `TextureBuilder`와 **같은 "얼굴면 밖" 정의**로 비얼굴 삼각형마다 면적 비례 1~3개 스플랫을 바인딩(위치·외접원 기준 스케일·접평면 회전), 목·어깨 1.3배, 두피 2겹(머리카락 두께 느낌), 얼굴면과 맞닿은 바깥 2겹은 완전 불투명으로 이음매를 가린다. 색은 `faceOnly`가 만든 `splatColor`에서 샘플링하고 없으면 기본 피부색. `splats.bin`(`SplatFile`, magic `CSP1`)으로 직렬화 — 렌더용 데이터와 재굽기용 바인딩(삼각형·바리센트릭·오프셋)을 분리 저장해서 나중에 변형이 생겨도 다시 구울 수 있다. **옷 평균색 등 영역별 기본색은 아직 하나(피부색)로 단순화**했다 — 옷 텍스처 소스가 없어서다. `GaussianSplatResource`가 실제로 기대하는 바이트 레이아웃도 아직 미확인(T-504에서 확인 예정).
-- **검증**: `cd CoursonaKit && swift test` → **132개 테스트, 29개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **RealityKit 브리지(T-504) — 완료, 그리고 중요한 제약 발견** — `SplatGPUBridge`: Apple 공식 예제와 같은 레이아웃(인터리브 14 float, `LowLevelBuffer` + `BufferDescriptor` 5개)으로 `[SplatRecord]` → `GaussianSplatComponent`. 실제로 빌드해보고서야 알게 된 것 둘: ① `GaussianSplatComponent`/`GaussianSplatResource`는 `@available(macOS 27, *)` — 이 프로젝트 배포 타깃(OS 26)보다 높다 ② **iOS SDK 엔 이 타입이 아예 없다**("cannot find in scope", iPhone 시뮬레이터 빌드로 확인) — macOS(아마 visionOS도) 전용으로 보인다. **즉 지금 기준 iPhone·iPad에서는 네이티브 가우시안 스플랫 입체감을 아예 못 쓴다** — Mac(OS 27+, Apple7 GPU)만 된다. iOS에서는 고스트 파트 폴백이 "임시"가 아니라 사실상 기본 경로가 됐다. `isSupported()`는 두 플랫폼 공통으로(iOS는 항상 false) 가용성 체크 없이 부를 수 있게 했다. 이 Mac(M3, macOS 27.0.1)에서 실제로 `GaussianSplatComponent`를 만들어 통과까지 확인했다 — 컴파일만 되고 안 돌려본 코드가 아니다.
+- **검증**: `cd CoursonaKit && swift test` → **136개 테스트, 30개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
 - **남은 것(C3)**: Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용), 배경 제거용 전체 인물 매트(OS 27 배포 타깃으로 올릴 때 재검토). `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — 기존 경험적 깊이 보정(`DepthRegistration`)이 이미 잘 동작하고, calibration 데이터의 실제 필드는 TrueDepth 실기기 없이는 검증할 방법이 없어서 섣불리 손대는 게 더 위험하다고 판단했다.
-- **남은 것(C5)**: `GaussianSplatResource`/`GaussianSplatComponent` 브리지 + 시뮬레이터·실패 폴백(T-504), 실기기 성능(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
+- **남은 것(C5)**: 실제 `BustEntity` 장면에 스플랫 컴포넌트를 붙이는 배선(브리지까지만 끝남), Mac 실기기 성능 측정(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
 
 ### 지금 이 앱을 띄우면 보이는 것
 
@@ -172,12 +173,12 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣·UserShapeDeltas/F7)
   Sources/CoursonaFace           얼굴면 완성 — CapBuilder(C1·C2 구현됨, C5 에서 캡 전용 UV 섬 추가)·SelfIntersectionCheck
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU), 내부에서 캡(눈·입)을 닫고 투영(C5, T-502)
-  Sources/CoursonaSplat          입체감(스플랫) — SplatBinder·SplatFile(splats.bin) 구현됨, RealityKit 브리지는 남음
+  Sources/CoursonaSplat          입체감(스플랫) — SplatBinder·SplatFile(splats.bin)·SplatGPUBridge(RealityKit, Mac 전용) 구현됨
   Sources/CoursonaRig            BustEntity(LowLevelMesh, 2파트 렌더)·FaceRig·ClipPlayer
   Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
   Sources/CoursonaIO             패키지·전송·zip
   Sources/CoursonaValidate       템플릿 계약 검사
-  Tests/CoursonaKitTests         132개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests·SplatBinderTests·SplatFileTests 포함)
+  Tests/CoursonaKitTests         136개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests·SplatBinderTests·SplatFileTests·SplatGPUBridgeTests 포함)
 coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
@@ -189,7 +190,7 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 ```bash
 cd CoursonaKit
 swift build        # 11개 모듈 + CLI 빌드
-swift test          # 132개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·스플랫 바인딩·splats.bin 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬까지 전부 로컬에서 돈다
+swift test          # 136개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·스플랫 바인딩·GPU 브리지·splats.bin 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
@@ -203,7 +204,7 @@ swift test          # 132개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C2 | 얼굴면 완성(A 등급) | ✅ |
 | C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사·저장 전 깊이 검증·B 등급 캡처 품질·인물 매트 게이트·iPad 가로 거치 기록 완료, 카메라 보정 데이터(의도적 보류)·Vision 조밀 대응·단안 깊이 모델·전체 인물 매트(OS 27+)·🧪 실기기 체크리스트는 남음 |
 | C4 | 단안 피팅(B·C 등급) | ✅ (코드·테스트는 C0 포팅분이 이미 만족, 🧪 실기기 빌드만 남음) |
-| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503) 완료, `GaussianSplatResource` 브리지·렌더(T-504~505)는 남음 |
+| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503)·RealityKit 브리지(T-504, Mac 전용으로 판명) 완료, 실제 장면 배선·실기기 성능(T-505)은 남음 |
 | C6 | 라이브 구동(거울) | ⏳ |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | ⏳ |
 | C8 | 검수·마감 | ⏳ |
