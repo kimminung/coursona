@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **기획·설계 단계** — 테크 PRD·태스크·UI/UX 디자인 PRD 작성 완료, **코드 구현은 아직 시작하지 않았다.** `coursona/` 앱 타깃은 Xcode 기본 템플릿 그대로다. 이 커밋은 문서와 화면 목업만 담는다.
+> 상태: **구현 중 — C0·C1 완료**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **86개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫는 얼굴면 분리까지 끝났다. 화면 UI 는 아직 자리표시자이고, 피팅·텍스처·전송은 다음 단계(C2~)다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -15,6 +15,17 @@
 | **C** | 사진 1장 | 전부 | 정면만 측정, 옆모습은 추정, 가장 빠름 |
 
 초상(Chosang) 프로젝트에서 검증한 "블렌더 흉상 + ARKit 패치 치환" 피팅은 그대로 가져오되, **눈알·입안을 따로 띄워 생기던 돌출·어긋남을 없앤다** — 분리된 물체 대신 같은 메시 안에서 눈·입 구멍을 자연스럽게 닫는다. 얼굴면만 또렷하게 보이고 나머지(머리·목·어깨)는 입체감만 있는 투명한 흉상으로 완성한다.
+
+## 지금까지 구현된 것 (C0·C1)
+
+문서가 아니라 실제로 빌드·테스트되는 코드 기준이다.
+
+- **`CoursonaKit` 로컬 패키지** — 초상(Chosang)의 `ChosangKit` 을 복사해 11개 모듈로 포팅(Core·Capture·ML·Fit·Face·Texture·Splat·Rig·Drive·IO·Validate). 식별자·파일 확장자·UTI 를 전부 Coursona 로 바꿨다. `CoursonaFace`·`CoursonaSplat`·`CoursonaML`·`CoursonaDrive` 는 이 프로젝트에만 있는 신규 모듈이다.
+- **등급 자동 판정** — `TierClassifier`: Face ID 카메라가 있고 2초 안에 깊이가 들어오면 A, 아니면 B. 아무 기기도 막지 않는다.
+- **얼굴면 분리 + 눈·입 구멍 닫기** — `FaceSurfacePartitioner`(얼굴면 삼각형만 앞쪽으로 재배열) + `CapBuilder`(경계 변 위상 탐색으로 눈·입의 실제 열린 테두리를 찾아 중간 고리+중심으로 닫는다). 블렌더 내부 상수를 추측하지 않는, 처음 설계보다 더 안전한 방식으로 교체했다 — `Docs/TechPRD.md` §6.2 구현 노트.
+- **`BustEntity` 2파트 렌더링** — 얼굴면/나머지를 별도 `LowLevelMesh.Part` + 머티리얼로 분리, 나머지는 기본 완전 투명, 디버그용 고스트 토글(`setGhostVisible`) 포함.
+- **템플릿 반입** — 초상의 기본 템플릿에서 분리 눈알·입안 파일(`EyesMouth.usdz`)만 제외하고 `Default.coursonatemplate` 로 재구성.
+- **검증**: `cd CoursonaKit && swift test` → **86개 테스트, 19개 스위트 전부 통과**(기존 피팅·텍스처 로직 포함, 새 얼굴면 테스트 4개 포함). Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
 
 ## 예상 시나리오 — 등급별 한 걸음씩
 
@@ -67,13 +78,13 @@
 - **아무 기기도 막지 않는다.** TrueDepth 가 없는 Mac·구형 iPhone·iPad 도 B 등급으로 시작할 수 있고, 나중에 Face ID 기기에서 그대로 업그레이드된다.
 - **모든 처리가 기기 안에서 끝난다.** 사진·얼굴 데이터는 서버로 가지 않는다. 모델이 필요한 곳(의사 깊이 추정, 외형 힌트)은 Apple 이 제공하는 온디바이스 모델만 쓴다.
 
-## 아키텍처(계획)
+## 아키텍처
 
-초상의 `ChosangKit` 을 복사해 시작한다. 모듈 두 개(`CoursonaFace`·`CoursonaSplat`)와 라이브 구동 모듈(`CoursonaDrive`)이 새로 생긴다.
+초상의 `ChosangKit` 을 복사해 시작했다. `CoursonaFace`·`CoursonaSplat`·`CoursonaML`·`CoursonaDrive` 는 이 프로젝트에만 있는 신규 모듈이다. "구현됨(C1)" 표시가 붙은 연결은 이미 코드로 존재한다(`CoursonaRig → CoursonaFace`). 나머지는 설계대로 연결될 자리다.
 
 ```mermaid
 graph LR
-    subgraph CoursonaKit["CoursonaKit (계획)"]
+    subgraph CoursonaKit["CoursonaKit"]
         Core["CoursonaCore"]
         Capture["CoursonaCapture"]
         ML["CoursonaML<br/>Depth Anything V2"]
@@ -94,6 +105,7 @@ graph LR
     Texture --> Core
     Splat --> Core
     Rig --> Core
+    Rig -->|"구현됨(C1)"| Face
     Drive --> Rig
     IO --> Core
     App --> Face
@@ -107,22 +119,47 @@ graph LR
 ```
 Docs/
   TechPRD.md           테크 PRD v0.2 — 등급 A/B/C, 얼굴면 완성 파이프라인(F1–F10), 단안 피팅(M1–M6), 스플랫, 패키지 포맷
-  Tasks.md              C0–C8 + 스파이크 S-1, 태스크 T-001~T-804 (전부 미시작)
+  Tasks.md              C0–C8 + 스파이크 S-1, 태스크 T-001~T-804 (C0·C1 완료 표시)
   UIUX-Prompt.md         UI 디자인 AI 용 요청문
   UXPRD.md               UI/UX 디자인 PRD — Stitch 목업 채택/배제 판정, 화면별 상태·문구
   Stitch-Request.md      Google Stitch 운용 프롬프트
   stitch_new_project_starter/      Stitch 목업 1차본(14화면, 이 README 에 쓴 것들)
   stitch_new_project_starter 2/    Stitch 목업 2차본(대안 테마 + 일부 폐기분)
-coursona/                Xcode 앱 타깃 — 기본 템플릿 그대로, 구현 전
+CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트되는 코드
+  Sources/CoursonaCore           모델·포맷·ARKit 52 타입·수학(+ FaceSurfacePartition, Geometry.boundaryLoops)
+  Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier
+  Sources/CoursonaML             온디바이스 모델 래퍼(C3 에서 채움)
+  Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣)
+  Sources/CoursonaFace           얼굴면 완성 — CapBuilder(C1 구현됨), 나머지는 C2
+  Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU)
+  Sources/CoursonaSplat          입체감(스플랫, C5 에서 채움)
+  Sources/CoursonaRig            BustEntity(LowLevelMesh, 2파트 렌더)·FaceRig·ClipPlayer
+  Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
+  Sources/CoursonaIO             패키지·전송·zip
+  Sources/CoursonaValidate       템플릿 계약 검사
+  Tests/CoursonaKitTests         86개 테스트(FaceSurfaceTests 포함)
+coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
+  Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
+tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제외 고정)
 ```
+
+## 빌드·테스트해 보기
+
+```bash
+cd CoursonaKit
+swift build        # 11개 모듈 + CLI 빌드
+swift test          # 86개 테스트 — 피팅·텍스처(합성 번들)·전송·얼굴면 분리까지 전부 로컬에서 돈다
+```
+
+앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
 
 ## 로드맵
 
 | 마일스톤 | 내용 | 상태 |
 |---|---|---|
-| C0 | 프로젝트 셋업, `CoursonaKit` 포팅 | ⏳ |
-| C1 | 한 메시·투명 흉상(분리 엔티티 폐기) | ⏳ |
+| C0 | 프로젝트 셋업, `CoursonaKit` 포팅 | ✅ |
+| C1 | 한 메시·투명 흉상(분리 엔티티 폐기) | ✅ |
 | C2 | 얼굴면 완성(A 등급) | ⏳ |
 | C3 | 캡처 A/B/C | ⏳ |
 | C4 | 단안 피팅(B·C 등급) | ⏳ |

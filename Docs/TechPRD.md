@@ -101,6 +101,8 @@
 - **투명 = 파트 제외**. 기본 렌더는 얼굴면 4 파트. 나머지 파트는 디버그 토글·시뮬레이터 폴백에서만 opacity 0.15 고스트.
 - 얼굴면 외곽(56점 루프)은 투명 영역과 맞닿는다. 스플랫이 외곽 안쪽 2 링까지 덮어 가장자리를 가린다(§6.6).
 
+> **구현 노트(C1, 2026-10-05)** — `CapBuilder` v0 은 위 서술과 달리 블렌더 `eye_band`/`mouth_band` 상수(0.0002/0.0015/0.006 m 등)를 추측 재현하지 않는다. 대신 `Geometry.boundaryLoops`(경계 변 위상 탐색)로 각 구멍의 **실제 열린 테두리**를 직접 찾아 중간 고리(신규 정점) + 중심(신규 정점) 하나로 닫는다. 눈·입 중심 시드에서 20 mm 안의 가장 가까운 경계 고리만 닫아 목/어깨 절단면과 혼동하지 않는다. 블렌더가 이미 만들어 둔 LidInner/LipInner 안쪽 띠(ring1·ring2)는 그대로 두고 그 **뒤의 열린 구멍만** 추가로 막으므로, "안쪽 고리가 몇 번째 LidInner 인덱스인지" 추측할 필요가 없다 — `InnerBandIndexMap`(§6.4 F5 서술)은 **불필요해졌다**. 파트는 서술된 5개가 아니라 **2개**(얼굴면 하나로 합침·나머지)이며, 눈 캡·입 캡은 별도 파트가 아니라 얼굴면 파트에 포함된다(머티리얼이 같으므로 나눌 이유가 없다). C2 의 F6(피팅 좌표로 다시 닫기)도 같은 `CapBuilder` 를 피팅된 `Identity.positions` 에 대해 다시 호출하면 되고, 새 구현이 필요 없다. 구현: `CoursonaFace/CapBuilder.swift`, `CoursonaCore/FaceSurfacePartition.swift`, `CoursonaCore/Math/Geometry.boundaryLoops`.
+
 ### 6.3 캡처 (`CoursonaCapture`)
 
 | 항목 | A 등급 (TrueDepth) | B 등급 (일반 카메라: Mac 전부, Face ID 없는 iPhone/iPad) | C 등급 (사진 1장) |

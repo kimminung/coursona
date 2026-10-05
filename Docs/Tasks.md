@@ -2,27 +2,27 @@
 
 상태: ✅ 완료 · 🔄 진행 · ⏳ 대기 · 🧪 실기기 검증 필요 · 🔬 스파이크(결과에 따라 설계 분기)
 
-원칙(초상 계승): 마일스톤 끝에 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·iPhone/Mac 실기기) 통과 + 체크리스트. 근거 문서는 `Docs/TechPRD.md` v0.2(절 번호는 거기 기준), UI 근거는 `Docs/UXPRD.md`. 모든 항목은 2026-10-05 현재 ⏳(미시작) — **구현 착수는 별도 지시 이후**.
+원칙(초상 계승): 마일스톤 끝에 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·iPhone/Mac 실기기) 통과 + 체크리스트. 근거 문서는 `Docs/TechPRD.md` v0.2(절 번호는 거기 기준), UI 근거는 `Docs/UXPRD.md`. **2026-10-05 밤 구현 착수.** Combine 금지 아님(TechPRD §6.1 예외).
 
 ## C0 · 프로젝트 셋업
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-001 | Xcode 프로젝트 `Coursona`: iOS·iPadOS·macOS 한 타깃(family 1,2 + Mac), 번들 `com.coulson.Coursona`, 배포 iOS 26·iPadOS 26·macOS 26, 엔타이틀먼트(카메라·마이크·로컬 네트워크·사진 보기) | §3, §8 | ⏳ |
-| T-002 | 로컬 Swift Package `CoursonaKit` — 초상 `ChosangKit` 소스를 **파일 단위로 복사**해 모듈 리네임: Core·Capture·Fit·Face(신규)·Texture·Splat(신규)·Rig·Drive(신규)·IO·ML(신규), 테스트 타깃 포함. 초상 리포를 경로로 참조하지 않는다 | §6.1 | ⏳ |
-| T-003 | 템플릿 반입: `Default.chosangtemplate`(template.json·bust.mesh·Template.usdz·textures·clips)만 복사. `EyesMouth.usdz`·`mouthInnerShapes` 메타는 **쓰지 않는다**(참조하지 않도록 로더에서 가드) | §6.2 | ⏳ |
-| T-004 | 초상에서 포팅한 테스트 스위트 전체(`FitTests`·`SelfFitTests`·`TextureBuilderTests`·`TextureRegionsTests`·`SparseCaptureTests`·`CaptureGuideTests` 등)를 기준선으로 `swift test` 녹색 확인 | §9 | ⏳ |
-| T-005 | `TierClassifier`: `ARFaceTrackingConfiguration.isSupported` + 2초 내 `capturedDepthData` 수신 → A, 실패 시 B(iOS/macOS 공통), 사용자가 "사진 1장"을 고르면 C. 세 진입점을 **막지 않는다** | §3, §5 | ⏳ |
-| T-006 | 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·실기기 1종) 통과 | — | ⏳ |
+| T-001 | Xcode 프로젝트 `Coursona`: iOS·iPadOS·macOS 한 타깃(family 1,2 + Mac), 번들 `com.coulson.Coursona`, 배포 iOS 26·iPadOS 26·macOS 26, 엔타이틀먼트(카메라·마이크·로컬 네트워크·사진 보기) | §3, §8 | ✅ — `UpdateTargetBuildSetting`/`AddInfoPlist` 로 설정(SUPPORTED_PLATFORMS 에서 xros/xrsimulator 제거, family 1,2, 배포 26.0, bundle id, `ENABLE_RESOURCE_ACCESS_CAMERA/AUDIO_INPUT`, `ENABLE_INCOMING/OUTGOING_NETWORK_CONNECTIONS`, `ENABLE_USER_SELECTED_FILES=readwrite`, Info.plist 카메라·마이크·로컬네트워크·Bonjour `_coursona._tcp`). macOS·iPhone 시뮬·iPad 시뮬 3빌드 확인(🧪 실기기 보류, 연결된 기기 없음). `DEVELOPMENT_TEAM` 은 손대지 않음(pbxproj 직접편집 금지 하네스 규칙) |
+| T-002 | 로컬 Swift Package `CoursonaKit` — 초상 `ChosangKit` 소스를 **파일 단위로 복사**해 모듈 리네임: Core·Capture·Fit·Face(신규)·Texture·Splat(신규)·Rig·Drive(신규)·IO·ML(신규), 테스트 타깃 포함. 초상 리포를 경로로 참조하지 않는다 | §6.1 | ✅ — 73개 파일 복사+리네임(Chosang→Coursona, chosang→coursona), Face/Splat/ML/Drive 는 계획 주석만 담은 플레이스홀더 타입으로 신설. **미연결**: 앱 타깃이 아직 이 패키지에 의존하지 않음 — Xcode가 열려 있을 때 패키지 의존성 추가는 pbxproj 를 건드려 하네스가 막음. 사용자가 Xcode 에서 File ▸ Add Package Dependencies ▸ Add Local… 로 `CoursonaKit` 폴더를 선택하고 앱 타깃에 `CoursonaKit` 제품을 추가해야 함(한 번만) |
+| T-003 | 템플릿 반입: `Default.chosangtemplate`(template.json·bust.mesh·Template.usdz·textures·clips)만 복사. `EyesMouth.usdz`·`mouthInnerShapes` 메타는 **쓰지 않는다**(참조하지 않도록 로더에서 가드) | §6.2 | ✅ — 초상 번들을 풀어 `EyesMouth.usdz` 제외 후 `coursona/coursona/Resources/Templates/Default.coursonatemplate`(stored zip, 24파일, 30MB)로 재압축. `tools/make_default_template.sh` 도 같은 방식으로 추가(재생성용) |
+| T-004 | 초상에서 포팅한 테스트 스위트 전체(`FitTests`·`SelfFitTests`·`TextureBuilderTests`·`TextureRegionsTests`·`SparseCaptureTests`·`CaptureGuideTests` 등)를 기준선으로 `swift test` 녹색 확인 | §9 | ✅ — `swift test`: **82개 테스트, 18개 스위트 전부 통과**(157초, Metal 패리티 포함) |
+| T-005 | `TierClassifier`: `ARFaceTrackingConfiguration.isSupported` + 2초 내 `capturedDepthData` 수신 → A, 실패 시 B(iOS/macOS 공통), 사용자가 "사진 1장"을 고르면 C. 세 진입점을 **막지 않는다** | §3, §5 | ✅ — `CoursonaCapture/TierClassifier.swift`. macOS 빌드로 `#else` 분기만 검증, iOS 분기(`#if os(iOS)`)는 패키지 단독으로는 iOS SDK 크로스빌드를 안 해 **미검증**(T-002 연결 뒤 앱 빌드로 확인) |
+| T-006 | 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·실기기 1종) 통과 | — | 🔄 — 3/4(iOS 시뮬 iPhone 17, iPadOS 시뮬 iPad Pro 11, macOS 전부 성공). 실기기는 연결된 기기가 없어 🧪 보류 |
 
 ## C1 · 한 메시·투명 흉상
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-101 | `FaceSurfacePartition`: 얼굴면(ARKitFace∪LidInner∪LipInner) 삼각형과 나머지를 분리해 `LowLevelMesh.Part` 구성. 인덱스 재배열 결과를 1회 캐시 | §6.2 | ⏳ |
-| T-102 | `CapBuilder` v0(템플릿 좌표 기준): 눈 캡(49정점·72삼각형×2) · 입 캡(73정점·108삼각형) 생성 — 블렌더 `eye_band`/`mouth_band` 상수 재현 | §6.2, §6.4 F5/F6 | ⏳ |
-| T-103 | `BustEntity` 파트 렌더: 기본은 얼굴면(패치+띠+캡)만 불투명 머티리얼, 나머지는 파트 **제외**. 디버그 고스트 토글(opacity 0.15) | §6.2, §3 | ⏳ |
-| T-104 | 단위 테스트: 캡 템플릿 자기 일치 0.0mm, 워터타이트(경계 모서리 0) 검사 | §9 | ⏳ |
+| T-101 | `FaceSurfacePartitioner`(CoursonaCore): 얼굴면(ARKitFace∪LidInner∪LipInner∪캡 신규 정점) 삼각형을 앞쪽으로 재배열, 코너 UV 도 같이 재배열 | §6.2 | ✅ |
+| T-102 | `CapBuilder` v0(템플릿 좌표): **설계 변경** — 블렌더 `eye_band`/`mouth_band` 상수를 추측 재현하는 대신, `Geometry.boundaryLoops`(경계 변 위상 탐색)로 눈·입의 실제 열린 테두리를 직접 찾아 중간 고리(신규)+중심(신규)으로 닫는다. 시드(눈·입 중심)로부터 20mm 안의 가장 가까운 경계 고리만 닫아 목/어깨 절단면과 혼동하지 않는다. 구멍이 없는 템플릿(합성 등)은 조용히 건너뛴다 | §6.2, §6.4 F6 | ✅ |
+| T-103 | `BustEntity` 파트 렌더: `LowLevelMesh.Part` 2개(머티리얼 인덱스 0=얼굴면, 1=나머지), 나머지는 기본 opacity 0(완전 제외), `setGhostVisible(true)` 로 0.15 고스트 토글 | §6.2, §3 | ✅ |
+| T-104 | 단위 테스트(`FaceSurfaceTests`, 평면 격자로 알고리즘 검증 — 실제 bust.mesh 는 앱 리소스라 패키지 테스트에서 직접 못 읽음): 경계 고리 탐색, 시드 매칭(먼 구멍은 안 닫음), 캡 자기 일치(정점·삼각형 수가 공식과 정확히 일치), 워터타이트(닫은 뒤 그 구멍의 경계 0) | §9 | ✅ — `swift test` 86개 전부 통과(신규 4개 포함) |
 
 ## C2 · 얼굴면 완성 (A 등급 밀집 경로)
 
