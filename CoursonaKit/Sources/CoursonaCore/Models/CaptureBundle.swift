@@ -17,9 +17,12 @@
 import Foundation
 import simd
 
-/// 5컷 종류.
+/// 캡처 컷 종류. 필수 5(front·left·right·up·smile) + 선택 2(eyesClosed·mouthOpen, TechPRD §6.3 C3·F7).
+/// 선택 2는 `CaptureGuide.skip()` 으로 건너뛸 수 있고, 있으면 `CoursonaFit.UserShapeDeltas`(F7)가 eyeBlink·jawOpen
+/// 패치 델타를 사용자 것으로 직접 치환한다.
 public enum ShotKind: String, CaseIterable, Codable, Sendable {
     case front, left, right, up, smile
+    case eyesClosed, mouthOpen
 
     public var title: String {
         switch self {
@@ -28,18 +31,22 @@ public enum ShotKind: String, CaseIterable, Codable, Sendable {
         case .right: "오른쪽 30°"
         case .up: "위 15°"
         case .smile: "정면 미소"
+        case .eyesClosed: "눈 감기 (선택)"
+        case .mouthOpen: "입 벌림 (선택)"
         }
     }
     /// 가이드 목표 yaw/pitch (도). yaw + = 피사체가 자기 왼쪽으로 고개를 돌림(카메라에서 보면 오른쪽 뺨이 보임).
     public var targetYawPitch: (yaw: Float, pitch: Float) {
         switch self {
-        case .front, .smile: (0, 0)
+        case .front, .smile, .eyesClosed, .mouthOpen: (0, 0)
         case .left: (30, 0)
         case .right: (-30, 0)
         case .up: (0, 15)
         }
     }
-    public var isNeutralRequired: Bool { self != .smile }
+    public var isNeutralRequired: Bool { self == .front || self == .left || self == .right || self == .up }
+    /// 필수 5 가 아니라 건너뛸 수 있는 선택 컷인가.
+    public var isOptional: Bool { self == .eyesClosed || self == .mouthOpen }
 }
 
 /// 깊이 맵 (Float32, m).

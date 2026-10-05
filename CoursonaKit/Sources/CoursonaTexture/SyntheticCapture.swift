@@ -38,6 +38,10 @@ public enum SyntheticCapture {
             w[.eyeSquintLeft] = 0.25; w[.eyeSquintRight] = 0.25; w[.cheekSquintLeft] = 0.3; w[.cheekSquintRight] = 0.3
         case .left:
             w[.browInnerUp] = 0.1
+        case .eyesClosed:
+            w[.eyeBlinkLeft] = 1.0; w[.eyeBlinkRight] = 1.0
+        case .mouthOpen:
+            w[.jawOpen] = 0.6
         default: break
         }
         return w

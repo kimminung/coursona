@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2 완료**(F7 제외). `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **90개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 화면 UI 는 아직 자리표시자이고, 캡처·텍스처·전송은 다음 단계(C3~)다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2 완료, C3 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **92개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7 도 이제 완료. 화면 UI 는 아직 자리표시자이고, 캡처 세션의 일부(카메라 보정 데이터 저장, 인물 매트)와 텍스처·전송은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -28,14 +28,17 @@
 - **실루엣 피팅에서 눈·입 제외** — 깊이로 두상을 당기는 단계가 눈·입 안쪽은 건드리지 않고, 그 구멍 근처 깊이점(눈알·치아 자리)도 무시한다.
 - **`BustEntity` 2파트 렌더링** — 얼굴면/나머지를 별도 `LowLevelMesh.Part` + 머티리얼로 분리, 나머지는 기본 완전 투명, 디버그용 고스트 토글(`setGhostVisible`) 포함.
 - **템플릿 반입** — 초상의 기본 템플릿에서 분리 눈알·입안 파일(`EyesMouth.usdz`)만 제외하고 `Default.coursonatemplate` 로 재구성.
-- **검증**: `cd CoursonaKit && swift test` → **90개 테스트, 20개 스위트 전부 통과**(기존 피팅·텍스처 로직 포함, 새 얼굴면 테스트 8개 포함). Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
-- **남은 것**: 눈 감기·입 벌림 컷으로 셰이프를 직접 치환하는 부분(F7)은 C3(캡처)에서 그 컷 자체가 생겨야 이어받을 수 있다.
+- **선택 2컷(눈 감기·입 벌림) 게이팅 + 셰이프 직접 치환(F7)** — `ShotKind` 에 `eyesClosed`·`mouthOpen` 을 추가해 A 등급(`FaceCaptureSession`, ARKit 블렌드셰이프 가중치)·B 등급(`PhotoCaptureSession`, Vision 눈/입 랜드마크 비율) 둘 다 이 두 컷을 찍을 수 있다. 찍히면 `UserShapeDeltas` 가 그 컷에서 `eyeBlinkLeft/Right`·`jawOpen` 셰이프 델타를 **직접** 읽어 치환한다 — 기존의 미소 컷 기반 진폭 스케일 보정(F10)보다 정확하다(합성 테스트로 확인: 사용자 셰이프가 템플릿 델타의 단순 배율이 아닐 때 스케일 보정은 4배 더 부정확하다). 안 찍으면 조용히 F10 으로 빠진다.
+- **검증**: `cd CoursonaKit && swift test` → **92개 테스트, 21개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **남은 것(C3)**: A 등급 세션의 `AVDepthData.cameraCalibrationData` 저장·깊이 5/5 검증, B 등급의 인물 매트(`GeneratePersonSegmentationRequest`)·캡처 품질 점수 게이트, C 등급(사진 1장) 경로, Vision↔템플릿 대응(`VisionCorrespondence`), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator`).
 
 ### 지금 이 앱을 띄우면 보이는 것
 
-아래는 Stitch 목업이 아니라 **지금 리포의 `ContentView` 를 실제로 렌더링한 캡처**다(2026-10-05, Mac). 화면 UI 는 아직 C8 전까지 자리표시자지만, `CoursonaKit` 이 앱에 제대로 연결돼 `TierClassifier` 가 실시간으로 동작하는 것을 보여 준다 — 이 Mac 은 Face ID 카메라가 없으니 올바르게 **B 등급**으로 판정했다.
+아래는 Stitch 목업이 아니라 **지금 리포의 `ContentView` 를 세 플랫폼 각각에서 실제로 렌더링한 캡처**다(2026-10-05). 화면 UI 는 아직 C8 전까지 자리표시자지만, 같은 `CoursonaKit` 코드가 **Mac·iPhone·iPad 세 곳 모두에서 빌드·실행**되고 `TierClassifier` 가 그때그때 실시간으로 기기 등급을 판정하는 것을 보여 준다. 셋 다 Face ID 카메라가 없는 기기/시뮬레이터라 올바르게 **B 등급**으로 판정했다 — 플랫폼이 달라도 같은 판정 로직이 같은 결과를 낸다는 것 자체가 테크 PRD 1번 목표("세 플랫폼에서 같은 모습")의 가장 작은 증거다.
 
-<img src="Docs/screenshots/c0-contentview-mac-tier-b.png" alt="코르소나 앱 ContentView, Mac에서 렌더링 — C0 셋업 단계, 등급 B 표시" width="320">
+| Mac | iPhone | iPad |
+|---|---|---|
+| <img src="Docs/screenshots/c0-contentview-mac-tier-b.png" alt="코르소나 앱 ContentView, Mac에서 렌더링 — 등급 B 표시" width="220"> | <img src="Docs/screenshots/c3-contentview-iphone-tier-b.png" alt="코르소나 앱 ContentView, iPhone 시뮬레이터에서 렌더링 — 등급 B 표시" width="160"> | <img src="Docs/screenshots/c3-contentview-ipad-tier-b.png" alt="코르소나 앱 ContentView, iPad 시뮬레이터에서 렌더링 — 등급 B 표시" width="200"> |
 
 ## 예상 시나리오 — 등급별 한 걸음씩
 
@@ -137,17 +140,17 @@ Docs/
   stitch_new_project_starter 2/    Stitch 목업 2차본(대안 테마 + 일부 폐기분)
 CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트되는 코드
   Sources/CoursonaCore           모델·포맷·ARKit 52 타입·수학(+ FaceSurfacePartition, Geometry.boundaryLoops)
-  Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier
+  Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier, 선택 2컷(눈 감기·입 벌림) 게이팅
   Sources/CoursonaML             온디바이스 모델 래퍼(C3 에서 채움)
-  Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣)
-  Sources/CoursonaFace           얼굴면 완성 — CapBuilder·SelfIntersectionCheck(C1·C2 구현됨), F7 은 C3 이후
+  Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣·UserShapeDeltas/F7)
+  Sources/CoursonaFace           얼굴면 완성 — CapBuilder·SelfIntersectionCheck(C1·C2 구현됨)
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU)
   Sources/CoursonaSplat          입체감(스플랫, C5 에서 채움)
   Sources/CoursonaRig            BustEntity(LowLevelMesh, 2파트 렌더)·FaceRig·ClipPlayer
   Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
   Sources/CoursonaIO             패키지·전송·zip
   Sources/CoursonaValidate       템플릿 계약 검사
-  Tests/CoursonaKitTests         86개 테스트(FaceSurfaceTests 포함)
+  Tests/CoursonaKitTests         92개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests 포함)
 coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
@@ -159,7 +162,7 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 ```bash
 cd CoursonaKit
 swift build        # 11개 모듈 + CLI 빌드
-swift test          # 90개 테스트 — 피팅·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사까지 전부 로컬에서 돈다
+swift test          # 92개 테스트 — 피팅·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
@@ -170,8 +173,8 @@ swift test          # 90개 테스트 — 피팅·텍스처(합성 번들)·전�
 |---|---|---|
 | C0 | 프로젝트 셋업, `CoursonaKit` 포팅 | ✅ |
 | C1 | 한 메시·투명 흉상(분리 엔티티 폐기) | ✅ |
-| C2 | 얼굴면 완성(A 등급) | ✅ (F7 은 C3 캡처 이후로 차단) |
-| C3 | 캡처 A/B/C | ⏳ |
+| C2 | 얼굴면 완성(A 등급) | ✅ |
+| C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅 + F7 완료, 카메라 보정 데이터·인물 매트·C 등급·Vision 대응·단안 깊이는 남음 |
 | C4 | 단안 피팅(B·C 등급) | ⏳ |
 | C5 | 텍스처·입체감(스플랫) | ⏳ |
 | C6 | 라이브 구동(거울) | ⏳ |

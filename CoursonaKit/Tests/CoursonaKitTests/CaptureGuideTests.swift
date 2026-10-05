@@ -47,7 +47,8 @@ struct CaptureGuideTests {
 
     @Test("촬영 → 다음 스텝, 건너뛰기, 재촬영, 완료")
     func flow() {
-        var g = CaptureGuide()
+        // 필수 5스텝만 — eyesClosed/mouthOpen(선택) 은 isOptional 게이팅/스킵이 UI 쪽 책임이라 여기선 다루지 않는다.
+        var g = CaptureGuide(steps: [.front, .left, .right, .up, .smile])
         g.markCaptured(.front)
         #expect(g.current == .left && g.state(of: .front) == .captured && g.completedCount == 1)
         g.skip()                                           // 왼쪽 건너뜀

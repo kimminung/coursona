@@ -53,6 +53,9 @@ public struct FaceFrameStatus: Sendable, Equatable {
     public var neutrality: Float = 0 // 52 가중치 합 (작을수록 중립)
     public var ambientLumens: Float = 0
     public var hasDepth = false
+    /// 선택 컷 게이트(C3·F7): 눈 감기 평균(`eyeBlinkLeft`·`eyeBlinkRight` 평균) · 입 벌림(`jawOpen`).
+    public var eyeBlinkAvg: Float = 0
+    public var jawOpenWeight: Float = 0
 }
 
 /// 캡처 게이트 임계값 (M2 에서 DEBUG 패널로 노출).
@@ -67,6 +70,9 @@ public struct CaptureGate: Sendable, Equatable {
     public var lumensRange: ClosedRange<Float> = 250...2000
     public var holdSeconds: Double = 0.5
     public var framesToAverage = 8
+    /// 선택 컷(C3·F7) 임계값 — TechPRD §6.3: 눈 감기 `eyeBlinkLeft/Right ≥ 0.8`, 입 벌림 `jawOpen ≥ 0.5`.
+    public var eyesClosedMinBlink: Float = 0.8
+    public var mouthOpenMinJaw: Float = 0.5
     public init() {}
 }
 
@@ -182,7 +188,8 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
             if self.recentVertices.count > self.gate.framesToAverage { self.recentVertices.removeFirst(); self.recentWeights.removeFirst() }
             if hasDepth { self.lastDepthSeen = Date() }
             if let depthNow { self.recentDepth = (depthNow, Date()) }
-            self.status = FaceFrameStatus(isTracked: anchor.isTracked, yaw: yaw, pitch: pitch, neutrality: weights.neutrality, ambientLumens: ambient, hasDepth: hasDepth)
+            self.status = FaceFrameStatus(isTracked: anchor.isTracked, yaw: yaw, pitch: pitch, neutrality: weights.neutrality, ambientLumens: ambient, hasDepth: hasDepth,
+                                          eyeBlinkAvg: (weights[.eyeBlinkLeft] + weights[.eyeBlinkRight]) / 2, jawOpenWeight: weights[.jawOpen])
             self.topShapes = weights.topContributors()
             if let previewImage { self.preview = previewImage; self.previewPoints = points }
             if let report, self.probe == nil { self.probe = report }
@@ -302,6 +309,8 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
         if abs(status.yaw - ty) > gate.yawTolerance { return (false, status.yaw < ty ? "고개를 조금 더 왼쪽으로" : "고개를 조금 더 오른쪽으로") }
         if abs(status.pitch - tp) > gate.pitchTolerance { return (false, status.pitch < tp ? "턱을 조금 들어 주세요" : "턱을 조금 내려 주세요") }
         if kind.isNeutralRequired, status.neutrality > gate.neutralitySumMax { return (false, "표정을 풀어 주세요") }
+        if kind == .eyesClosed, status.eyeBlinkAvg < gate.eyesClosedMinBlink { return (false, "눈을 감아 주세요") }
+        if kind == .mouthOpen, status.jawOpenWeight < gate.mouthOpenMinJaw { return (false, "입을 더 벌려 주세요") }
         if !gate.lumensRange.contains(status.ambientLumens) { return (false, status.ambientLumens < gate.lumensRange.lowerBound ? "조금 더 밝은 곳으로" : "너무 밝습니다") }
         return (true, "유지하세요")
     }

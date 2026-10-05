@@ -146,6 +146,12 @@ F10 DeltaCalibrator    jawOpen 진폭(미소 컷) — F7 이 치환했으면 생
 > - **identity.bin v3·`caps.json` 은 필요 없어졌다.** 캡 기하와 F8 델타는 (템플릿, 피팅된 `Identity.positions`) 만으로 로드할 때마다 결정적으로 다시 계산된다 — 저장할 사용자별 데이터가 없다. identity.bin 은 v2 그대로 쓴다(§6.9 의 "v3" 서술은 더 이상 유효하지 않다 — 패키지 포맷은 C7 에서 재확인한다).
 > - **F7(UserShapeDeltas)은 그대로 C3 이후로 차단**이다 — 눈 감기·입 벌림 컷이 캡처 경로(`ShotKind`)에 없다.
 > 구현: `CoursonaFit/SilhouetteFitter.swift`(F4: `excludeEyeMouthRegion`), `CoursonaFace/CapBuilder.swift`(F6·F8 합침), `CoursonaFace/SelfIntersectionCheck.swift`(F9), `CoursonaRig/BustEntity.swift`(피팅 좌표 대입).
+>
+> **구현 노트(C3, 2026-10-06)** — `ShotKind` 에 `eyesClosed`·`mouthOpen`(둘 다 `isOptional`) 을 추가해 F7 의 차단을 풀었다.
+> - A 등급(`FaceCaptureSession`): `FaceFrameStatus.eyeBlinkAvg`/`jawOpenWeight` + `CaptureGate.eyesClosedMinBlink(0.8)`/`mouthOpenMinJaw(0.5)` 로 두 선택 컷을 게이팅.
+> - B 등급(`PhotoCaptureSession`): Vision 눈/입 랜드마크 바운딩박스에서 계산한 `eyeAspectRatio`/`mouthOpenRatio` + 같은 자리 게이트로 동일 기능.
+> - **F7(`CoursonaFit/UserShapeDeltas.swift`)**: 그 컷의 정렬된 ARKit 패치에서 "다른 셰이프가 이미 설명하는 변위"(다른 블렌드셰이프 가중치 × 템플릿 델타)를 뺀 뒤, 목표 셰이프 가중치로 나눠 1.0 기준 델타로 되돌린다. `FaceFitter.fit` 에 `FitOptions.calibrateUserShapes`(기본 on)로 연결 — F10(`DeltaCalibrator.jawOpen`, 미소 컷 기반 진폭 스케일)보다 먼저 적용되고 성공하면 F10 결과를 덮어쓴다.
+> - 합성 테스트(`UserShapeDeltasTests`)로 F7 이 F10 보다 실제로 더 정확한 상황을 확인했다: 사용자의 진짜 jawOpen 모양이 템플릿 델타의 **단순 배율이 아니라**(배율이면 F10 의 스칼라 최소제곱이 이미 거의 최적이라 비교가 무의미하다) 정점별로 다르게 흔들리는 모양일 때, F10 은 스칼라 하나로만 늘리고 줄일 수 있어 그 흔들림을 전혀 설명 못 해 RMS 3.0 mm 가 나고, F7 은 컷을 직접 읽어 RMS 0.75 mm(640×480 합성 캡처 자체의 노이즈 바닥치)로 4 배 더 정확하다. 균일한 평행이동을 섭동으로 쓰면 컷 정렬(F1)의 강체 변환이 그대로 상쇄해 차이가 안 보인다는 함정도 확인(테스트 주석에 남김).
 
 #### 단안 경로 (B·C 등급) — `MonoFitter`
 

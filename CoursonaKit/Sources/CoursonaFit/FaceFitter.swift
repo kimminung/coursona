@@ -33,6 +33,8 @@ public struct FitOptions: Sendable, Equatable {
     public var silhouette = SilhouetteOptions()
     /// T-305 jawOpen 진폭 보정 (미소 컷)
     public var calibrateJawOpen = true
+    /// F7(C3, T-205): 눈 감기·입 벌림 컷이 있으면 `eyeBlinkLeft/Right`·`jawOpen` 패치 델타를 직접 치환한다.
+    public var calibrateUserShapes = true
     public init() {}
 }
 
@@ -84,6 +86,12 @@ public enum FaceFitter {
             shapeScales[.jawOpen] = j.scale
             if let d = t.shapeDeltas[.jawOpen], d.count >= t.patchCount {
                 patchDeltas[.jawOpen] = (0..<t.patchCount).map { d[$0] * j.scale }
+            }
+        }
+        // F7(C3, T-205): 눈 감기·입 벌림 컷이 있으면 더 정확한 직접 치환으로 덮어쓴다(미소 컷 기반 jawOpen 진폭보다 우선).
+        if options.calibrateUserShapes {
+            for (shape, d) in UserShapeDeltas.replacementDeltas(bundle: bundle, template: t, userPatch: patch.userPatch, alignments: patch.alignments) {
+                patchDeltas[shape] = d
             }
         }
 

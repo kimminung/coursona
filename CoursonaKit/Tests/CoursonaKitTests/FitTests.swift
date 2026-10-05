@@ -98,7 +98,7 @@ struct FitTests {
     @Test("패치 솔버: 정렬·중립화·평균 → 템플릿 자체는 0.1 mm 이내, 눈알은 링 피팅 또는 사전값으로 manifest 근처")
     func patchSolver() throws {
         let t = Self.template
-        let sol = try FacePatchSolver.solve(bundle: Self.bundle(), template: t)
+        let sol = try FacePatchSolver.solve(bundle: Self.bundle(kinds: [.front, .left, .right, .up, .smile]), template: t)
         #expect(sol.shotsUsed == 4)
         #expect(sol.alignments.count == 5, "미소 컷도 정렬된다")
         #expect(Geometry.rms(sol.userPatch, Array(t.patchPositions)) < 0.0001)
@@ -177,8 +177,8 @@ struct FitTests {
         #expect(abs((q.jawOpenScale ?? 0) - 1.3) < 0.08)
         #expect(id.shapeScales[.jawOpen] != nil && id.patchDeltas[.jawOpen]?.count == 1220)
         #expect((q.smileResidualRMS ?? 1) < 0.0005)
-        // 보정 없이 풀면 미소 잔차가 더 크다
-        var noCal = FitOptions(); noCal.calibrateJawOpen = false
+        // 보정 없이 풀면 미소 잔차가 더 크다 (F7 도 꺼야 한다 — 그러지 않으면 입 벌림 컷으로 직접 치환돼 버린다)
+        var noCal = FitOptions(); noCal.calibrateJawOpen = false; noCal.calibrateUserShapes = false
         let idNo = try FaceFitter.fit(bundle: b, template: t, options: noCal)
         #expect((idNo.quality!.smileResidualRMS ?? 0) > (q.smileResidualRMS ?? 0))
         // runtimeDeltas: 패치는 보정 델타, 밖은 scale × 1.3

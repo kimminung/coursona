@@ -39,7 +39,7 @@ struct SelfFitTests {
         let t = Self.template
         var opt = SyntheticCaptureOptions()
         opt.imageWidth = 320; opt.imageHeight = 240; opt.depthWidth = 320; opt.depthHeight = 240
-        let bundle = SyntheticCapture.makeBundle(template: t, options: opt)
+        let bundle = SyntheticCapture.makeBundle(template: t, kinds: [.front, .left, .right, .up, .smile], options: opt)
         #expect(bundle.shots.count == 5)
         let id = try FaceFitter.fit(bundle: bundle, template: t)
         let rmsAll = Geometry.rms(id.positions, t.positions)

@@ -32,7 +32,7 @@
 | T-202 | `SilhouetteFitter` 제외 영역(F4): `SilhouetteOptions.excludeEyeMouthRegion`(기본 ON) — 움직일 정점에서 LidInner∪LipInner 제외(`movableVertices`), 포인트 클라우드에서 눈·입 중심 반경 안 깊이점 제외(`exclusionCenters`) | F4 | ✅ |
 | T-203 | ~~`InnerBandBuilder`(F5)~~ | F5 | ✅ — **불필요해짐**. LidInner·LipInner 는 C1 에서 건드리지 않는다(기존 위치·삼각형 그대로). "인덱스↔루프 순서 추론"(`InnerBandIndexMap`)은 설계 자체가 사라졌다 — §6.2 구현 노트 참고 |
 | T-204 | `CapBuilder` v1(F6): 피팅 좌표로 다시 닫기 | F6 | ✅ — **새 코드 없이 됨**. `BustEntity.init` 이 `identity.positions`(정점 수가 맞으면)를 템플릿에 대입한 뒤 **같은** `CapBuilder.addingCaps` 를 부른다. `caps.json` 은 **불필요**(무상태 재계산이라 저장할 게 없다) |
-| T-205 | `UserShapeDeltas`(F7) | F7 | ⏳ **차단** — 눈 감기·입 벌림 컷은 C3 에서 캡처 경로가 생겨야 쓸 수 있다(`ShotKind` 에 아직 `eyesClosed`/`mouthOpen` 없음). C3 이후 재개 |
+| T-205 | `UserShapeDeltas`(F7) | F7 | ✅ — C3 에서 `ShotKind.eyesClosed`/`mouthOpen` 이 생겨 재개. 그 컷의 정렬된 ARKit 패치에서 다른 셰이프 기여를 뺀 뒤 가중치로 나눠 `eyeBlinkLeft/Right`·`jawOpen` 패치 델타를 **직접 치환** — 미소 기반 진폭 스케일(`DeltaCalibrator.jawOpen`)보다 정확하다(합성 테스트: 모양이 단순 배율이 아닐 때 스케일 보정은 설명을 못 해 RMS 3.0mm, F7 은 단일 컷 캡처 노이즈 바닥치인 0.75mm). `FitOptions.calibrateUserShapes`(기본 on)로 끌 수 있다 |
 | T-206 | `RegionDeltaBuilder`(F8): 캡이 새로 만든 정점(중간 고리·중심)에 **붙어 있는 테두리의 평균 델타**를 준다 — `CapBuilder.addingCaps` 안에서 셰이프마다 수행 | F8 | ✅ |
 | T-207 | `SelfIntersectionCheck`(F9): 진짜 삼각형-삼각형 교차 대신 **법선 뒤집힘**으로 근사(캡 삼각형이 중립↔셰이프 1.0 사이에서 뒤집히면 겹침 의심) | F9 | ✅ — `CoursonaFace/SelfIntersectionCheck.swift`. 4종 분류(눈 띠↔캡 등)·재시도 로직은 v1 범위에서 뺐다(근사 검사라 재시도할 "상수"가 없다) |
 | T-208 | ~~`Identity` → identity.bin v3~~ | §6.7 | ✅ — **불필요해짐**. 캡·F8 델타는 (템플릿, 피팅된 positions) 만으로 로드 시 결정적으로 재계산된다 — 저장할 사용자별 데이터가 없다. identity.bin 은 v2 그대로 |
@@ -43,8 +43,8 @@
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-301 | `FaceCaptureSession` 7컷(필수 5+선택 2), `AVDepthData.cameraCalibrationData` 저장, 저장 시 5/5 깊이 검증 | §6.3 A | ⏳ |
-| T-302 | `PhotoCaptureSession` 확장: B 등급 5+2컷, `GeneratePersonSegmentationRequest(.accurate)` 매트, `VNDetectFaceCaptureQualityRequest` 점수 게이트 | §6.3 B | ⏳ |
+| T-301 | `FaceCaptureSession` 7컷(필수 5+선택 2), `AVDepthData.cameraCalibrationData` 저장, 저장 시 5/5 깊이 검증 | §6.3 A | 🔄 — `ShotKind`에 `eyesClosed`/`mouthOpen`(선택, `isOptional`) 추가, `FaceFrameStatus.eyeBlinkAvg`/`jawOpenWeight` + `CaptureGate` 임계값으로 두 컷 게이팅 완료(F7 이 바로 이 컷을 씀). `cameraCalibrationData` 저장·깊이 5/5 검증은 아직 — 🧪 실기기에서 확인 |
+| T-302 | `PhotoCaptureSession` 확장: B 등급 5+2컷, `GeneratePersonSegmentationRequest(.accurate)` 매트, `VNDetectFaceCaptureQualityRequest` 점수 게이트 | §6.3 B | 🔄 — Vision 눈/입 랜드마크 바운딩박스로 `eyeAspectRatio`/`mouthOpenRatio` 계산 + 게이팅으로 두 선택 컷 지원 완료. 인물 매트·캡처 품질 점수 게이트는 아직 |
 | T-303 | C 등급: `PhotosPicker`/파일 가져오기 → 정면 1장 적합성 검사(정면·눈 뜸·입 다묾·밝기) | §6.3 C | ⏳ |
 | T-304 | `VisionCorrespondence`: 템플릿 패치를 가상 카메라로 투영해 Vision 76점 영역과 최근접 대응 생성·캐시 | §6.3 | ⏳ |
 | T-305 | `CoursonaML.MonoDepthEstimator`: Depth Anything V2 small(Core ML, Apple 배포) 래퍼, 지연 로드·CPU 폴백, 얼굴 박스 영역만 추론 | §6.10, Q7 | ⏳ |

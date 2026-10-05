@@ -32,6 +32,9 @@ public struct PhotoFrameStatus: Sendable, Equatable {
     public var imageWidth = 0
     public var imageHeight = 0
     public var confidence: Float = 0
+    /// 선택 컷 게이트(C3·F7, B 등급): 눈 종횡비(높이/폭, 평균) · 입 벌림 비율(안쪽 입술 높이 / 바깥 입술 폭).
+    public var eyeAspectRatio: Float = 1
+    public var mouthOpenRatio: Float = 0
 }
 
 /// 희소 캡처 게이트.
@@ -43,6 +46,9 @@ public struct PhotoCaptureGate: Sendable, Equatable {
     public var minFaceWidthRatio: Float = 0.16
     public var framesToAverage = 8
     public var holdSeconds: Double = 0.5
+    /// 선택 컷(C3·F7) 임계값 — TechPRD §6.3: 눈 감기 `종횡비 < 0.12`, 입 벌림 `안쪽/바깥 입술 폭 > 0.25`.
+    public var eyesClosedMaxAspect: Float = 0.12
+    public var mouthOpenMinRatio: Float = 0.25
     public init() {}
 }
 
@@ -56,6 +62,9 @@ struct PhotoFaceAnalysis: Sendable {
     var confidence: Float
     var width: Int
     var height: Int
+    /// 선택 컷 게이트용(C3·F7) — `PhotoFrameStatus` 와 같은 정의.
+    var eyeAspectRatio: Float
+    var mouthOpenRatio: Float
 }
 
 @MainActor
@@ -177,8 +186,17 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let vy = Float(f.yaw.converted(to: .degrees).value), vp = Float(f.pitch.converted(to: .degrees).value), vr = Float(f.roll.converted(to: .degrees).value)
         let pose = SparseFaceGeometry.pose(visionYaw: vy, visionPitch: vp, visionRoll: vr, keyPoints: key)
         let box = f.boundingBox.toImageCoordinates(size, origin: .upperLeft)
+        // 선택 컷 게이트(C3·F7): 눈 종횡비(높이/폭 평균) · 입 벌림(안쪽 입술 높이 / 바깥 입술 폭).
+        func bbox(_ pts: [SIMD2<Float>]) -> (w: Float, h: Float) {
+            guard let x0 = pts.map(\.x).min(), let x1 = pts.map(\.x).max(), let y0 = pts.map(\.y).min(), let y1 = pts.map(\.y).max() else { return (0, 0) }
+            return (x1 - x0, y1 - y0)
+        }
+        let leftEyeBox = bbox(px(lm.leftEye)), rightEyeBox = bbox(px(lm.rightEye))
+        let ear = ((leftEyeBox.h / max(1, leftEyeBox.w)) + (rightEyeBox.h / max(1, rightEyeBox.w))) / 2
+        let innerLipsBox = bbox(px(lm.innerLips)), outerLipsBox = bbox(px(lm.outerLips))
+        let mouthOpen = outerLipsBox.w > 1 ? innerLipsBox.h / outerLipsBox.w : 0
         return PhotoFaceAnalysis(points: px(lm.allPoints), keyPoints: key, box: box, pose: pose, visionYawPitch: SIMD2(vy, vp),
-                                 confidence: f.confidence, width: cg.width, height: cg.height)
+                                 confidence: f.confidence, width: cg.width, height: cg.height, eyeAspectRatio: ear, mouthOpenRatio: mouthOpen)
     }
 
     /// 얼굴 상자 평균 밝기 (0…1, sRGB 평균).
@@ -215,7 +233,8 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let b = Self.brightness(image, in: a.box)
         status = PhotoFrameStatus(isTracked: true, yaw: a.pose.x, pitch: a.pose.y, roll: a.pose.z, visionYaw: a.visionYawPitch.x, visionPitch: a.visionYawPitch.y,
                                   brightness: b, faceWidthRatio: Float(a.box.width) / Float(max(1, image.width)), landmarkCount: a.points.count,
-                                  imageWidth: image.width, imageHeight: image.height, confidence: a.confidence)
+                                  imageWidth: image.width, imageHeight: image.height, confidence: a.confidence,
+                                  eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio)
     }
 
     // MARK: 촬영
@@ -294,6 +313,8 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let (ty, tp) = kind.targetYawPitch
         if abs(status.yaw - ty) > gate.yawTolerance { return (false, status.yaw < ty ? "고개를 조금 더 왼쪽으로" : "고개를 조금 더 오른쪽으로") }
         if abs(status.pitch - tp) > gate.pitchTolerance { return (false, status.pitch < tp ? "턱을 조금 들어 주세요" : "턱을 조금 내려 주세요") }
+        if kind == .eyesClosed, status.eyeAspectRatio > gate.eyesClosedMaxAspect { return (false, "눈을 감아 주세요") }
+        if kind == .mouthOpen, status.mouthOpenRatio < gate.mouthOpenMinRatio { return (false, "입을 더 벌려 주세요") }
         if !gate.brightnessRange.contains(status.brightness) { return (false, status.brightness < gate.brightnessRange.lowerBound ? "조금 더 밝은 곳으로" : "너무 밝습니다") }
         return (true, "유지하세요")
     }
