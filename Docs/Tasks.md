@@ -48,8 +48,8 @@
 | T-303 | C 등급: `PhotosPicker`/파일 가져오기 → 정면 1장 적합성 검사(정면·눈 뜸·입 다묾·밝기) | §6.3 C | 🔄 — `CoursonaCapture/PhotoSuitability.swift`: 평가 로직은 Vision 비의존 순수 함수(B 등급과 **같은 `PhotoCaptureGate` 임계값** 재사용, 새 상수 없음) + `check(_:)`(Vision 래퍼). 단위 테스트 8개. `PhotosPicker` SwiftUI 연결은 C8 화면 작업 때 |
 | T-304 | `VisionCorrespondence`: 템플릿 패치를 가상 카메라로 투영해 Vision 76점 영역과 최근접 대응 생성·캐시 | §6.3 | ⏳ |
 | T-305 | `CoursonaML.MonoDepthEstimator`: Depth Anything V2 small(Core ML, Apple 배포) 래퍼, 지연 로드·CPU 폴백, 얼굴 박스 영역만 추론 | §6.10, Q7 | ⏳ |
-| T-306 | iPad 가로 거치 대응: `CaptureShotMeta.orientation` 기록, 피팅은 메타만 사용(초상 회전 버그 재발 방지) | §6.3 | ⏳ |
-| T-307 | 🧪 실기기 체크리스트 1차: iPhone A 7컷 완주, Mac B 5컷 완주 | §9 | ⏳ |
+| T-306 | iPad 가로 거치 대응: `CaptureShotMeta.orientation` 기록, 피팅은 메타만 사용(초상 회전 버그 재발 방지) | §6.3 | ✅ — `CaptureOrientation`(7종) 추가, `FaceCaptureSession`(A 등급)이 `UIDevice.current.orientation` 을 그대로 기록만 한다. **캡처·피팅 회전 수학은 전혀 안 건드렸다** — 지금도 늘 세로로 처리한다(초상 회전 버그가 바로 이 수학을 실기기 없이 건드려서 난 문제라 가장 조심한 부분). `beginGeneratingDeviceOrientationNotifications()` 를 안 부르면 이 값이 항상 0(.unknown)이라는 게 문서에 명시돼 있어 `start()`/`stop()` 에 추가(실기기 없이는 몰랐을 함정). Codable 왕복 단위 테스트 3개. 실제 가로 지원(영상·깊이 회전 분기)은 이 기록을 보고 나중에 결정 |
+| T-307 | 🧪 실기기 체크리스트 1차: iPhone A 7컷 완주, Mac B 5컷 완주 | §9 | 🔄 — 2026-10-05, iPhone 16·MacBook Air M4 에서 `TierClassifier` 1차 실기기 확인(ContentView 자리표시자 수준, 7컷 캡처 UI 는 아직 없음). Mac 은 기대대로 B. iPhone 16 은 처음 두 번 TrueDepth 가 있는데도 B 로 나왔으나, **임시 진단 화면(실시간 미리보기 + 상태 표시)으로 직접 확인한 결과 최종적으로 A 로 정확히 판정됨 — `TierClassifier` 로직 자체는 처음부터 맞았다.** 진짜 원인은 지금의 `ContentView`(자리표시자) 가 라이브 카메라 미리보기 없이 백그라운드에서 조용히 2초만 보고 끝나는 구조라, 사용자가 그 2초 동안 카메라를 보고 있지 않으면(안내가 전혀 없으니 당연하다) 얼굴이 안 잡혀 B 로 떨어지는 **테스트 방법론 문제**였다. 권한이 `.notDetermined` 면 먼저 묻고 기다리게 한 수정은 유효한 개선으로 남겨둔다. **중요한 제품 요구사항 하나 확정**: C8 에서 실제 캡처 진입 화면을 만들 때는 반드시 라이브 미리보기(혹은 최소한 "카메라를 봐주세요" 안내)를 등급 판정 중에 같이 보여줘야 한다 — 지금처럼 안내 없이 조용히 판정하면 실사용자도 똑같이 헷갈릴 것이다 |
 
 ## C4 · 단안 피팅 (B·C 등급)
 

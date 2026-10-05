@@ -14,6 +14,7 @@ import CoursonaCore
 import ARKit
 import CoreImage
 import Observation
+import UIKit
 
 /// T-007 스파이크 보고: 한 프레임에서 깊이·내부 파라미터·정점·조명이 동시에 나오는가.
 public struct ARFaceProbeReport: Sendable, Equatable {
@@ -122,12 +123,16 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
         session.delegate = self
         session.delegateQueue = delegateQueue
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        // T-306: `UIDevice.orientation` 은 이 호출 전까지 항상 0(.unknown)을 돌려준다(문서에 명시) — 기록만 하는
+        // 용도라도 꺼놓으면 전부 unknown 으로 남는다.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         isRunning = true
         errorText = nil
     }
 
     public func stop() {
         session.pause()
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
         isRunning = false
         recentVertices.removeAll(); recentWeights.removeAll()
         latestFrame = nil; latestAnchor = nil
@@ -287,8 +292,22 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
         let meta = CaptureShotMeta(kind: kind, imageFile: "shot-\(kind.rawValue).jpg", depthFile: depth == nil ? nil : "depth-\(kind.rawValue).f32",
                                    imageWidth: width, imageHeight: height, depthWidth: depth?.width, depthHeight: depth?.height,
                                    intrinsics: intr, cameraTransform: camT, faceTransform: anchor.transform,
-                                   faceVertices: avg, blendShapes: w, light: light, averagedFrames: n, timestamp: frame.timestamp)
+                                   faceVertices: avg, blendShapes: w, light: light, averagedFrames: n, timestamp: frame.timestamp,
+                                   orientation: Self.captureOrientation(UIDevice.current.orientation))
         return CaptureShot(meta: meta, image: image, depth: depth)
+    }
+
+    /// T-306: 기록용 변환. 캡처·피팅 로직은 이 값을 쓰지 않는다 — 영상·깊이는 언제나 세로로 처리한다.
+    nonisolated static func captureOrientation(_ ui: UIDeviceOrientation) -> CaptureOrientation {
+        switch ui {
+        case .portrait: .portrait
+        case .portraitUpsideDown: .portraitUpsideDown
+        case .landscapeLeft: .landscapeLeft
+        case .landscapeRight: .landscapeRight
+        case .faceUp: .faceUp
+        case .faceDown: .faceDown
+        default: .unknown
+        }
     }
 
     /// 조도 경고 문장 (T-203 배너). 문제없으면 nil.

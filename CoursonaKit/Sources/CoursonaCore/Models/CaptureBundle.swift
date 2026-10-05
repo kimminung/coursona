@@ -119,6 +119,11 @@ public struct LightEstimate: Codable, Sendable, Equatable {
     }
 }
 
+/// 기기 물리적 방향(T-306, `UIDeviceOrientation` 과 같은 뜻) — 기록용. `CaptureShotMeta.orientation` 참고.
+public enum CaptureOrientation: String, Codable, Sendable, Equatable {
+    case portrait, portraitUpsideDown, landscapeLeft, landscapeRight, faceUp, faceDown, unknown
+}
+
 /// 한 컷의 메타데이터 (meta.json 에 들어간다). 픽셀 데이터는 별도 파일.
 public struct CaptureShotMeta: Codable, Sendable, Equatable {
     public var kind: ShotKind
@@ -152,12 +157,16 @@ public struct CaptureShotMeta: Codable, Sendable, Equatable {
     public var poseEstimate: [Float]?
     /// intrinsics 가 센서값이 아니라 가정 FOV 로 추정된 값이면 true (Mac 은 `videoFieldOfView` 가 없다)
     public var intrinsicsEstimated: Bool?
+    /// T-306: 촬영 순간 기기의 물리적 방향(iPad 가로 거치 등). **피팅·캡처 로직은 이 값을 읽지 않는다** — 영상·깊이는
+    /// 지금도 늘 세로로 처리한다(`FaceCaptureSession`/`PhotoCaptureSession` 의 포트레이트 회전 규약, 초상의 회전 버그 재발 방지).
+    /// 진단·추후 실제 가로 지원을 위한 기록용 필드. 없으면(옛 번들) nil.
+    public var orientation: CaptureOrientation?
 
     public init(kind: ShotKind, imageFile: String, depthFile: String?, imageWidth: Int, imageHeight: Int, depthWidth: Int?, depthHeight: Int?,
                 intrinsics: Geometry.Intrinsics, cameraTransform: simd_float4x4, faceTransform: simd_float4x4,
                 faceVertices: [SIMD3<Float>], blendShapes: ArkitWeights, light: LightEstimate, averagedFrames: Int, timestamp: Double,
                 landmarks2D: [SIMD2<Float>]? = nil, keyPoints2D: [LandmarkName: SIMD2<Float>]? = nil, faceBox: CGRect? = nil,
-                poseEstimate: SIMD3<Float>? = nil, intrinsicsEstimated: Bool? = nil) {
+                poseEstimate: SIMD3<Float>? = nil, intrinsicsEstimated: Bool? = nil, orientation: CaptureOrientation? = nil) {
         self.kind = kind; self.imageFile = imageFile; self.depthFile = depthFile
         self.imageWidth = imageWidth; self.imageHeight = imageHeight; self.depthWidth = depthWidth; self.depthHeight = depthHeight
         self.intrinsics = intrinsics; self.cameraTransform = Matrix4Codable(cameraTransform); self.faceTransform = Matrix4Codable(faceTransform)
@@ -168,6 +177,7 @@ public struct CaptureShotMeta: Codable, Sendable, Equatable {
         self.faceBox = faceBox.map { [Float($0.minX), Float($0.minY), Float($0.width), Float($0.height)] }
         self.poseEstimate = poseEstimate.map { [$0.x, $0.y, $0.z] }
         self.intrinsicsEstimated = intrinsicsEstimated
+        self.orientation = orientation
     }
 
     public var faceVertexArray: [SIMD3<Float>] {

@@ -161,6 +161,15 @@ F10 DeltaCalibrator    jawOpen 진폭(미소 컷) — F7 이 치환했으면 생
 > - **인물 매트**: `GeneratePersonSegmentationRequest` 의 결과 전체(알파 마스크 이미지)를 꺼내는 `.pixelBuffer` 접근자는 **OS 27+ 가 필요하다** — `RunCodeSnippet` 으로 실제로 "only available in macOS 27.0 or newer" 컴파일 오류를 받아 확인했다(이 프로젝트 배포 타깃은 OS 26). 전체 매트 이미지를 저장해 배경을 제거하는 원래 계획은 **보류**한다.
 >   대신 같은 요청의 `pixel(at: NormalizedPoint)`(점 단위 샘플링)는 OS 26 에서 이미 된다 — 얼굴 상자를 5×5 그리드로 샘플링해 "이 상자가 실제로 사람으로 분류되는가" 비율을 게이트 신호로만 쓴다(`PersonCoverage.swift`). 배경 제거(텍스처 투영에서 벽지를 피부색으로 오인하는 문제)는 여전히 못 푼다 — 배포 타깃을 OS 27로 올릴 때 `.pixelBuffer` 로 재검토.
 > - 샘플링 로직(`PersonCoverage.ratio`)은 Vision 타입을 몰라도 되게 클로저로 분리해 순수 로직으로 테스트한다(5개). `PhotoSuitability`(T-303, C 등급)도 같은 두 값을 받도록 확장 — 기본값 1(측정 안 함)이라 기존 호출부는 그대로 통과한다.
+>
+> **추가(T-306, 2026-10-05)** — iPad 가로 거치 기록. `CoursonaCore` 에 `CaptureOrientation`(7종, `UIDeviceOrientation` 과 같은 뜻) 을 추가하고 `CaptureShotMeta.orientation` 에 담는다. `FaceCaptureSession`(A 등급) 이 촬영 순간 `UIDevice.current.orientation` 을 그대로 매핑해 기록하지만, **영상·깊이·좌표 회전 수학은 조금도 바꾸지 않았다** — 지금도 늘 세로(포트레이트) 거치를 가정해 처리한다. 이렇게 보수적으로 간 이유: 초상(Chosang)의 회전 버그가 정확히 "회전 관련 수학을 실기기 검증 없이 건드려서" 난 문제였고, 지금도 TrueDepth 가 없는 시뮬레이터로는 실제 가로 거치 상황을 재현할 수 없다 — 기록만 해 두면 나중에 실기기로 가로 거치 사진을 받아서 **그때** 안전하게 분기를 넣을 수 있다.
+> 문서(Apple)에 `UIDevice.orientation` 은 `beginGeneratingDeviceOrientationNotifications()` 를 부르기 전엔 항상 0(`.unknown`)을 돌려준다고 명시돼 있다 — 실기기 없이는 몰랐을 함정이라 `start()`/`stop()` 에 시작·종료 호출을 추가했다. Codable 왕복 단위 테스트 3개(`CaptureOrientationTests`) — 매핑 함수 자체(`FaceCaptureSession.captureOrientation`)는 iOS 전용이라 macOS 에서 돌리는 `swift test` 로는 못 검증한다(🧪 실기기).
+>
+> **실기기 디버깅(T-307, 2026-10-05) — 확정된 결론: 로직은 처음부터 맞았다.** iPhone 16·MacBook Air M4 1차 실기기 테스트에서 `TierClassifier` 가 TrueDepth 가 있는 iPhone 16 을 A 가 아니라 B 로 판정하는 것처럼 보이는 문제가 반복됐다(2회). 추적 과정:
+> 1. 1차 가설(타이밍): 최초 실행 시 카메라 권한 팝업 응답 시간이 `detectAutomaticTier` 의 2초 깊이-대기 윈도를 깎아먹을 수 있다고 보고 `AVCaptureDevice.authorizationStatus(for:) == .notDetermined` 면 먼저 묻고 기다리도록 고쳤다 — 유효한 개선이지만, 권한을 이미 승인한 뒤 재실행에서도 B 가 나와서 **이게 근본 원인이 아니었음**이 드러났다.
+> 2. 더 추측하지 않고 `ContentView` 에 임시로 실시간 미리보기 + `isSupported`/권한/추적·깊이 상태를 전부 화면에 띄우는 진단 코드를 넣어 실기기에서 직접 확인했다. 결과: **TrueDepth 지원 예 · 권한 허용됨 · 얼굴 인식 예 · 최종 등급 A.** "깊이 수신 아니오" 로 보였던 건 버그가 아니라 TrueDepth 깊이 프레임이 컬러 프레임과 주기가 달라 매 프레임 오지 않는 정상 동작(코드 주석에 이미 있던 내용)이 멈춘 순간 우연히 그 프레임이었을 뿐이다.
+> **진짜 원인**: `ContentView`(C0 자리표시자) 가 라이브 미리보기 없이 백그라운드에서 조용히 2초만 보고 끝나는 구조라, 사용자가 그 2초 동안 카메라를 보고 있지 않으면(안내가 전혀 없으니 당연히 그럴 수 있다) 얼굴이 안 잡혀 B 로 떨어지는 **테스트 방법론 문제**였다 — `TierClassifier` 코드 자체에는 수정이 필요 없었다(권한 대기 개선만 유효하게 남긴다).
+> **제품 요구사항으로 확정**: C8 에서 실제 캡처 진입 화면을 만들 때는 등급 판정 중 반드시 라이브 미리보기(또는 최소 "카메라를 봐주세요" 안내)를 같이 보여줘야 한다 — 지금처럼 안내 없이 조용히 판정하면 실사용자도 똑같이 헷갈릴 것이다. 진단에 쓴 임시 UI 코드는 확인 후 바로 원래 자리표시자로 되돌렸다(C8 전까지 `ContentView` 는 계속 최소 상태로 유지).
 
 #### 단안 경로 (B·C 등급) — `MonoFitter`
 
