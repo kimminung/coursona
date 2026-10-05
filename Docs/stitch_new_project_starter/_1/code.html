@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_blank" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Apple+SD+Gothic+Neo:wght@100..900&family=SF+Pro:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;min-height:100vh;margin:0;padding:0;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,16px);}.pt-safe{padding-top:env(safe-area-inset-top,44px);}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "glass-border": "rgba(255, 255, 255, 0.18)", "tertiary-fixed-dim": "#ffb868", "on-secondary-container": "#003a11", "primary-fixed-dim": "#adc6ff", "observed-scalp-fallback": "#5F4C38", "secondary-fixed-dim": "#53e16f", "glass-fill": "rgba(255, 255, 255, 0.08)", "on-error": "#690005", "surface": "#111318", "stage-deep": "#0B0D12", "tier-a-badge": "#007AFF", "on-secondary-fixed-variant": "#00531c", "on-secondary": "#003911", "background": "#111318", "primary-container": "#4b8eff", "on-tertiary": "#482900", "on-primary": "#002e69", "inverse-surface": "#e2e2e9", "outline-variant": "#414755", "glass-fill-active": "rgba(255, 255, 255, 0.16)", "tier-c-badge": "#8E8E93", "inverse-primary": "#005bc1", "secondary-fixed": "#72fe88", "surface-dim": "#111318", "on-tertiary-fixed-variant": "#673d00", "surface-container": "#1e1f25", "error": "#ffb4ab", "on-tertiary-container": "#3f2300", "surface-container-lowest": "#0c0e13", "error-container": "#93000a", "tertiary-container": "#ce7f00", "secondary-container": "#05b046", "on-primary-container": "#00285c", "surface-bright": "#37393f", "on-tertiary-fixed": "#2b1700", "inverse-on-surface": "#2e3036", "surface-container-low": "#1a1b21", "primary-fixed": "#d8e2ff", "on-primary-fixed-variant": "#004493", "glass-specular": "rgba(255, 255, 255, 0.32)", "on-primary-fixed": "#001a41", "on-surface-variant": "#c1c6d7", "system-red": "#FF453A", "on-error-container": "#ffdad6", "surface-container-high": "#282a2f", "surface-tint": "#adc6ff", "tier-b-badge": "#32ADE6", "secondary": "#53e16f", "tertiary": "#ffb868", "on-background": "#e2e2e9", "outline": "#8b90a0", "surface-variant": "#33353a", "tertiary-fixed": "#ffddbb", "stage-surface": "#14171F", "primary": "#adc6ff", "stage-elevated": "#1C202B", "on-secondary-fixed": "#002107", "on-surface": "#e2e2e9", "surface-container-highest": "#33353a" }, borderRadius: { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" }, spacing: { "space-lg": "1rem", "margin-tablet": "1.5rem", "gutter": "1rem", "space-xl": "1.5rem", "margin": "1rem", "gutter-desktop": "1.5rem", "margin-desktop": "2rem", "space-3xl": "3rem", "space-sm": "0.5rem", "space-md": "0.75rem", "space-2xl": "2rem", "gutter-tablet": "1.5rem", "space-xs": "0.25rem" }, fontFamily: { "display-lg": ["SF Pro"], "mono-pin": ["SF Pro"], "label-md": ["SF Pro"], "label-sm": ["SF Pro"], "headline-lg": ["Apple SD Gothic Neo"], "body-sm": ["Apple SD Gothic Neo"], "body-md": ["Apple SD Gothic Neo"], "headline-md": ["Apple SD Gothic Neo"], "label-lg": ["SF Pro"], "headline-sm": ["Apple SD Gothic Neo"], "body-lg": ["Apple SD Gothic Neo"], "display-lg-mobile": ["SF Pro"] }, fontSize: { "display-lg": ["34px", { "lineHeight": "41px", "fontWeight": "700" }], "mono-pin": ["32px", { "lineHeight": "38px", "letterSpacing": "4px", "fontWeight": "600" }], "label-md": ["13px", { "lineHeight": "16px", "fontWeight": "500" }], "label-sm": ["11px", { "lineHeight": "13px", "fontWeight": "500" }], "headline-lg": ["24px", { "lineHeight": "30px", "fontWeight": "700" }], "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }], "body-md": ["15px", { "lineHeight": "20px", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "25px", "fontWeight": "600" }], "label-lg": ["15px", { "lineHeight": "20px", "fontWeight": "600" }], "headline-sm": ["17px", { "lineHeight": "22px", "fontWeight": "600" }], "body-lg": ["17px", { "lineHeight": "22px", "fontWeight": "400" }], "display-lg-mobile": ["28px", { "lineHeight": "34px", "fontWeight": "700" }] } } } };</script></head><body class="bg-stage-deep text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased selection:bg-primary-container selection:text-on-primary-container"><main class="flex-1 flex flex-col relative w-full pt-safe pb-safe bg-stage-deep"><div class="flex flex-col w-full text-on-surface select-none pb-8">
+<!-- Top 3D Viewport Hero Area -->
+<section class="relative w-full overflow-hidden flex flex-col items-center justify-between pt-3 pb-6 px-4">
+<!-- Ambient Stage Glow Layers -->
+<div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+<div class="w-72 h-72 rounded-full bg-primary-container/10 blur-3xl transform -translate-y-8"></div>
+<div class="w-56 h-56 rounded-full bg-secondary-fixed/5 blur-2xl transform translate-y-12"></div>
+</div>
+<!-- Floating Top Utility Pill -->
+<div class="relative z-10 mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-glass-fill backdrop-blur-xl shadow-sm">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-tight">온디바이스 공간 뉴럴 엔진 대기 중</span>
+</div>
+<!-- 3D Spatial Bust Viewport Canvas Frame -->
+<div class="relative w-full max-w-xs aspect-square flex items-center justify-center">
+<!-- 3D Persona Face Surface & Volumetric Cloud Graphic -->
+<div class="relative w-64 h-64 flex items-center justify-center">
+<!-- Diffuse Particle Cloud / Volumetric Ambient (Neck, Head boundary, Volume) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none animate-[spin_40s_linear_infinite]" fill="none" viewbox="0 0 240 240">
+<defs>
+<radialgradient cx="50%" cy="50%" id="cloudGlow" r="50%">
+<stop offset="0%" stop-color="#adc6ff" stop-opacity="0.35"></stop>
+<stop offset="60%" stop-color="#4b8eff" stop-opacity="0.12"></stop>
+<stop offset="100%" stop-color="#0B0D12" stop-opacity="0"></stop>
+</radialgradient>
+<filter height="140%" id="softMist" width="140%" x="-20%" y="-20%">
+<fegaussianblur stddeviation="6"></fegaussianblur>
+</filter>
+</defs>
+<!-- Outer Volumetric Scatter Points -->
+<circle cx="120" cy="115" fill="url(#cloudGlow)" filter="url(#softMist)" r="92"></circle>
+<g class="transition-transform duration-700" opacity="0.65">
+<circle cx="68" cy="85" fill="#adc6ff" opacity="0.4" r="1.5"></circle>
+<circle cx="172" cy="80" fill="#adc6ff" opacity="0.35" r="1.5"></circle>
+<circle cx="54" cy="120" fill="#adc6ff" opacity="0.3" r="1.2"></circle>
+<circle cx="186" cy="125" fill="#adc6ff" opacity="0.3" r="1.4"></circle>
+<circle cx="78" cy="165" fill="#adc6ff" opacity="0.25" r="1.5"></circle>
+<circle cx="162" cy="170" fill="#adc6ff" opacity="0.3" r="1.5"></circle>
+<circle cx="95" cy="195" fill="#53e16f" opacity="0.3" r="1.8"></circle>
+<circle cx="145" cy="195" fill="#53e16f" opacity="0.3" r="1.8"></circle>
+<circle cx="120" cy="208" fill="#adc6ff" opacity="0.4" r="2.2"></circle>
+<circle cx="120" cy="25" fill="#adc6ff" opacity="0.25" r="1.2"></circle>
+<circle cx="150" cy="42" fill="#adc6ff" opacity="0.3" r="1.2"></circle>
+<circle cx="90" cy="42" fill="#adc6ff" opacity="0.3" r="1.2"></circle>
+</g>
+</svg>
+<!-- Floor Contact Soft Shadow -->
+<div class="absolute bottom-2 w-36 h-4 bg-surface-container-lowest rounded-full blur-md opacity-90"></div>
+<!-- Rendered Bust Imagery (Face Surface Opaque, Rest Cloud) -->
+<div class="relative z-10 w-52 h-52 rounded-full overflow-hidden flex items-center justify-center">
+<img class="w-full h-full object-cover transform scale-105 filter drop-shadow-2xl" data-alt="Photorealistic 3D spatial persona bust rendered against a dark stage #0B0D12. The face surface is soft, natural, photoreal skin texture ending gently before the ears and below the jawline. The back of the head, hair volume, neck, and shoulders fade into a luminous diffuse volumetric particle cloud with soft cyan and blue points of light. Calm natural closed-mouth expression, looking directly forward, soft studio key light from upper right, technological tranquility." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2C8bKq3Ugt5QJZjWkM6KrDA_qvxSsIe35bMO56NRXcZy0khX2sy096KrNCL9hHwPEOr6V1RTUpOrFbOzRi8qfS_JhZGqQgsihT8EIgnZ3z4GqAx-Qvw78OkVeWJ3aokQ0JFiI3nlpNVx3M5rl7GAaS6MHpd4LmOYm-RGmsYTrPSeBGIb_VCfVsfPndBy2_Curs7o5wdx05WY9wDt0wAUqE9uHZykq_4zA02swPYaCZgf-slYjjn9p"/>
+<!-- Vignette Gradient Mask to fade mesh edges into Stage Deep -->
+<div class="absolute inset-0 pointer-events-none bg-gradient-to-t from-stage-deep via-transparent to-stage-deep/40 opacity-70"></div>
+<div class="absolute inset-0 pointer-events-none bg-gradient-to-r from-stage-deep/60 via-transparent to-stage-deep/60"></div>
+</div>
+<!-- Spatial Calibration Wire Reticle Indicator -->
+<div class="absolute inset-x-8 top-10 bottom-8 pointer-events-none rounded-full border-none shadow-[inset_0_0_24px_rgba(173,198,255,0.06)] flex items-center justify-center">
+<div class="w-full h-full rounded-full animate-pulse opacity-30 bg-gradient-to-b from-primary/10 to-transparent"></div>
+</div>
+</div>
+</div>
+<!-- App Title & Reassuring Spatial Subtitle -->
+<div class="relative z-10 text-center mt-2 px-2">
+<h1 class="font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">
+        코르소나
+      </h1>
+<p class="mt-2 font-body-md text-body-md text-on-surface-variant max-w-xs leading-relaxed mx-auto break-keep">
+        내 표정과 고개, 목소리를 따라 움직이는 3D 페르소나를 온디바이스로 만듭니다.
+      </p>
+</div>
+</section>
+<!-- Middle Section: Three Prominent Liquid Glass Cards -->
+<section class="flex flex-col gap-3 px-4 mt-2">
+<!-- Card 1: Face ID Camera (Tier A - Recommended) -->
+<div class="group relative w-full text-left p-4 rounded-xl bg-surface-container/70 backdrop-blur-2xl shadow-md transition-all duration-200 active:scale-[0.985] active:bg-surface-container-high focus:outline-none" onclick="selectMethod('faceid')" role="button" tabindex="0">
+<!-- Glow Accent Highlight for Tier A -->
+<div class="absolute -right-4 -bottom-4 w-28 h-28 bg-tier-a-badge/10 rounded-full blur-2xl pointer-events-none"></div>
+<div class="flex items-start justify-between gap-3">
+<!-- Left Content -->
+<div class="flex-1 min-w-0">
+<!-- Tier Badge & Recommended Pill -->
+<div class="flex items-center gap-2 mb-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-tier-a-badge text-white font-label-sm text-label-sm font-semibold tracking-wide shadow-sm">
+              A등급
+            </span>
+<span class="inline-flex items-center gap-1 text-primary-fixed-dim font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+              권장
+            </span>
+</div>
+<!-- Title -->
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight">
+            Face ID 카메라로 만들기
+          </h2>
+<!-- Subtitle -->
+<p class="mt-1 font-body-sm text-body-sm text-on-surface-variant leading-snug break-keep">
+            가장 정밀 · 얼굴 형태와 깊이 정보 직접 측정
+          </p>
+<!-- Time Expectation Tag -->
+<div class="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-lowest/80 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[13px] text-primary">schedule</span>
+<span>약 1분 30초 소요</span>
+</div>
+</div>
+<!-- Action Forward Chevron Glass Target -->
+<div class="w-8 h-8 rounded-full bg-glass-fill flex items-center justify-center text-on-surface-variant group-hover:text-on-surface group-hover:bg-glass-fill-active transition-colors shrink-0 mt-1">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Card 2: Standard Front Camera (Tier B) -->
+<div class="group relative w-full text-left p-4 rounded-xl bg-surface-container-low/75 backdrop-blur-2xl shadow-sm transition-all duration-200 active:scale-[0.985] active:bg-surface-container focus:outline-none" onclick="selectMethod('device-cam')" role="button" tabindex="0">
+<div class="flex items-start justify-between gap-3">
+<!-- Left Content -->
+<div class="flex-1 min-w-0">
+<!-- Tier Badge -->
+<div class="flex items-center gap-2 mb-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-tier-b-badge/20 text-tier-b-badge font-label-sm text-label-sm font-semibold tracking-wide">
+              B등급
+            </span>
+<span class="text-outline font-label-sm text-label-sm">일반 렌즈</span>
+</div>
+<!-- Title -->
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight">
+            이 기기 카메라로 만들기
+          </h2>
+<!-- Subtitle -->
+<p class="mt-1 font-body-sm text-body-sm text-on-surface-variant leading-snug break-keep">
+            일반 전면 카메라로 촬영 · 얼굴 치수 추정
+          </p>
+<!-- Upgrade Note Tag -->
+<div class="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-lowest/80 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[13px] text-tertiary">swap_vert</span>
+<span class="truncate">나중에 Face ID 기기에서 정밀하게 업그레이드 가능</span>
+</div>
+</div>
+<!-- Action Forward Chevron -->
+<div class="w-8 h-8 rounded-full bg-glass-fill flex items-center justify-center text-on-surface-variant group-hover:text-on-surface group-hover:bg-glass-fill-active transition-colors shrink-0 mt-1">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Single Photo from Album (Tier C) -->
+<div class="group relative w-full text-left p-4 rounded-xl bg-surface-container-low/75 backdrop-blur-2xl shadow-sm transition-all duration-200 active:scale-[0.985] active:bg-surface-container focus:outline-none" onclick="selectMethod('photo')" role="button" tabindex="0">
+<div class="flex items-start justify-between gap-3">
+<!-- Left Content -->
+<div class="flex-1 min-w-0">
+<!-- Tier Badge -->
+<div class="flex items-center gap-2 mb-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-bright text-on-surface-variant font-label-sm text-label-sm font-semibold tracking-wide">
+              C등급
+            </span>
+<span class="text-outline font-label-sm text-label-sm">빠른 생성</span>
+</div>
+<!-- Title -->
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight">
+            사진 1장으로 만들기
+          </h2>
+<!-- Subtitle -->
+<p class="mt-1 font-body-sm text-body-sm text-on-surface-variant leading-snug break-keep">
+            앨범에서 정면 사진 선택 · 옆모습은 추정
+          </p>
+<!-- Time Expectation Tag -->
+<div class="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-lowest/80 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[13px] text-on-surface-variant">bolt</span>
+<span>약 30초 소요</span>
+</div>
+</div>
+<!-- Action Forward Chevron -->
+<div class="w-8 h-8 rounded-full bg-glass-fill flex items-center justify-center text-on-surface-variant group-hover:text-on-surface group-hover:bg-glass-fill-active transition-colors shrink-0 mt-1">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Section: Secondary File Link & On-Device Privacy Trust Badge -->
+<footer class="mt-8 flex flex-col items-center px-6 text-center space-y-4">
+<!-- Existing Persona File Import Link Button -->
+<button class="group inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-glass-fill hover:bg-glass-fill-active backdrop-blur-md text-primary font-label-md text-label-md transition-all active:scale-95 shadow-sm" onclick="openCoursonaFile()" type="button">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+<span class="font-semibold">이미 만든 코르소나 열기</span>
+<span class="text-on-surface-variant font-normal">(.coursona 파일)</span>
+</button>
+<!-- Biometric Privacy & On-Device Security Assurance -->
+<div class="max-w-xs pt-2">
+<p class="font-body-sm text-body-sm text-outline leading-relaxed break-keep">
+<span class="text-on-surface-variant inline-block mr-0.5">🔒</span>
+        모든 과정은 기기 안에서만 처리되며, 사진과 얼굴 데이터는 외부 서버로 전송되지 않습니다.
+      </p>
+</div>
+</footer>
+</div>
+<script>
+  function selectMethod(methodType) {
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(12);
+    }
+    const messages = {
+      'faceid': 'Face ID 깊이 센서 캘리브레이션을 시작합니다.',
+      'device-cam': '전면 카메라 프레임 안내를 시작합니다.',
+      'photo': '사진 보관함에서 정면 사진을 선택해 주세요.'
+    };
+    console.log('[Coursona] Selected method:', methodType, messages[methodType]);
+  }
+
+  function openCoursonaFile() {
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(8);
+    }
+    console.log('[Coursona] Open .coursona document picker initiated.');
+  }
+</script></main></body></html>

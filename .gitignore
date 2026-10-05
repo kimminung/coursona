@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode — 사용자별 상태(절대 커밋하지 않는다: 로컬 경로·창 레이아웃·최근 파일 목록이 들어간다)
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode — 빌드 산출물·파생 데이터
+build/
+DerivedData/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods/Carthage (사용 안 하지만 혼입 방지)
+Pods/
+Carthage/Build/
+
+# 코르소나 — 캡처 원본·개인 생체 데이터는 어떤 경우에도 커밋하지 않는다 (TechPRD §8)
+*.coursonacapture
+*.chosangcapture
+Fixtures/*.coursonacapture
+Fixtures/*.chosangcapture
+
+# 대용량 온디바이스 모델 가중치 — LFS 또는 최초 실행 다운로드로(TechPRD §14 Q7)
+*.mlpackage/**/weights/
+*.mlmodelc/
+
+# 편집기
+.vscode/
+.idea/
