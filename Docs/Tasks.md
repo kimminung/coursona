@@ -75,11 +75,11 @@
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-601 | `ARKitFaceDriver`(iOS·iPadOS): 초상 라이브 경로 재사용, ARKit 52 + 고개 | §6.8 | ⏳ |
-| T-602 | `VisionFaceDriver`(Mac 기본, iOS 폴백): 12 셰이프 + yaw/pitch/roll, 1€ 필터, 2초 중립 캘리브레이션 | §6.8, Q10 | ⏳ |
-| T-603 | `MicVisemeDriver` 통합(`HangulViseme`·`MicLevelMeter`), Vision이 입을 못 잡을 때 보완 | §6.8 | ⏳ |
-| T-604 | `FaceRigSystem` 합성 규칙 포팅(클립⊕라이브⊕비셈⊕깜빡임), 시선은 눈 캡 UV 이동 | §6.7, §6.8 | ⏳ |
-| T-605 | 🧪 거울 화면 지연 실측 < 120ms, iPhone 60fps·Mac 90fps | §7, §9 | ⏳ |
+| T-601 | `ARKitFaceDriver`(iOS·iPadOS): 초상 라이브 경로 재사용, ARKit 52 + 고개 | §6.8 | 🔄 — `CoursonaDrive/ARKitFaceDriver.swift`: `FaceCaptureSession`(A 등급)과 같은 `ArkitWeights(named:)` 변환 + `FacePoseConvention.guideAngles` 를 그대로 재사용해 ARSession `didUpdate frame:` 마다 52 가중치 + 머리 자세(yaw·pitch 만, roll 은 기존 규약 자체가 안 다룸)를 흘린다. **표정 가중치는 이미 실기기로 검증된 변환이라 신뢰도가 높지만, yaw/pitch 도(度) → 쿼터니언 합성(축·순서)은 라이브 구동에서 처음 쓰는 것이라 실기기 없이 못 검증했다** — T-306 의 "회전 수학을 실기기 없이 건드리면 위험하다" 교훈을 그대로 적용해 머리말에 🧪 로 명시. iOS 시뮬레이터 빌드 통과(ARKit 얼굴 추적 자체는 시뮬레이터에서 불가, 컴파일만 확인) |
+| T-602 | `VisionFaceDriver`(Mac 기본, iOS 폴백): 12 셰이프 + yaw/pitch/roll, 1€ 필터, 2초 중립 캘리브레이션 | §6.8, Q10 | 🔄 — `CoursonaDrive/VisionFaceSignals.swift`(순수 로직, 단위 테스트 8개) + `VisionFaceDriver.swift`(상태 보유: `PhotoCaptureSession` 재사용 + 채널별 `OneEuroFilter`(신규, `CoursonaCore`, 단위 테스트 4개) + 2초 캘리브레이션). `PhotoCaptureSession`/`PhotoFrameStatus` 에 이번에 추가한 원시값(좌우 눈 종횡비·입 폭 비·안쪽 입술 종횡비·눈썹 거리·시선 오프셋)에서 12 특징(jawOpen·mouthSmile L/R·mouthPucker·mouthFunnel·eyeBlink L/R·browInnerUp·browDown L/R·eyeLook 8방향)을 중립 대비 상대값으로 뽑는다. **`RunCodeSnippet` 으로 실제 Mac 카메라를 켜 봤지만 카메라 권한이 `.notDetermined` 상태에서 그 실행 컨텍스트엔 권한 대화상자를 눌러줄 사람이 없어 추적 자체를 확인 못 했다** — T-307 의 "라이브 미리보기 없이 조용히 판정하면 안 된다" 교훈과 같은 종류의 한계. 순수 로직(`VisionFaceSignals`)은 합성 데이터로 검증됐지만, 실제 카메라 연동·임계값(완전히 감았을 때 EAR 비율 등은 전부 경험적 추정)은 실기기(또는 최소한 권한이 허용된 상호작용 실행)로 **아직 미검증** |
+| T-603 | `MicVisemeDriver` 통합(`HangulViseme`·`MicLevelMeter`), Vision이 입을 못 잡을 때 보완 | §6.8 | ✅ — `CoursonaDrive/MicVisemeDriver.swift`(`MicLevelMeter`·`HangulViseme` 래퍼, 새 합성 로직 없음 — 입 합성은 이미 `FaceRigSystem` 에 있다) + `FaceDriverCoordinator.swift`(우선순위: ARKit > Vision(추적 중·캘리브레이션 끝남) > 마이크만 — 소반 `MouthSourceKind` 폴백과 같은 모양). 마이크만 경로에서는 `rig.externalWeights = nil` 로 둬서 `FaceRigSystem` 의 기존 오디오 기반 턱·비셈 합성이 그대로 입을 채우게 한다(새 코드 불필요) |
+| T-604 | `FaceRigSystem` 합성 규칙 포팅(클립⊕라이브⊕비셈⊕깜빡임), 시선은 눈 캡 UV 이동 | §6.7, §6.8 | 🔄 — 합성 규칙(`ExpressionMixer.mix`)·`FaceRigSystem` 자체는 **이미 포팅돼 있었다**(`CoursonaRig/FaceRig.swift`, 초상 `ChosangRig/FaceRig.swift` 와 바이트 단위로 동일 — T-002 때 같이 복사됨). **남은 절반(시선을 눈 캡 UV 이동으로)은 아직 안 됐다**: 지금의 `FaceRigSystem.applyGaze`/`BustEntity` 는 §6.7 이 말하는 "눈 캡 전용 머티리얼 + `textureCoordinateTransform.offset`" 구조가 아니라, 레거시 USDZ 자식 엔티티(`"_Eye_L"`/`"_Eye_R"`)를 회전시키는 옛 경로만 있다 — `BustEntity` 는 지금 얼굴면 전체가 머티리얼 인덱스 0 하나(눈·입 캡 포함)라 캡만 따로 움직일 머티리얼이 없다. 이건 `BustEntity` 머티리얼을 4개 파트로 더 쪼개는 작업이 선행돼야 해서 범위를 넘어 다음 증분으로 미룬다 |
+| T-605 | 🧪 성능·지연: 거울 화면 지연 < 120ms, iPhone 60fps·Mac 90fps | §7, §9 | ⏳ — 실기기 필요, 보류 |
 
 ## C7 · 패키지·병합·플랫폼 동일성
 

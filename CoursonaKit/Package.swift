@@ -81,7 +81,9 @@ let package = Package(
         ),
         .target(
             name: "CoursonaDrive",
-            dependencies: ["CoursonaCore", "CoursonaRig"],
+            // CoursonaCapture(C6, T-602): VisionFaceDriver 가 B 등급 캡처와 같은 `PhotoCaptureSession` 카메라·Vision
+            // 파이프라인을 그대로 돌려 쓴다(중복 Vision 호출 없이).
+            dependencies: ["CoursonaCore", "CoursonaRig", "CoursonaCapture"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
@@ -101,7 +103,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CoursonaKitTests",
-            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture", "CoursonaSplat"],
+            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture", "CoursonaSplat", "CoursonaDrive"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

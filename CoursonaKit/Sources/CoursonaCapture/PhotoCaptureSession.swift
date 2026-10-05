@@ -39,6 +39,20 @@ public struct PhotoFrameStatus: Sendable, Equatable {
     /// (`GeneratePersonSegmentationRequest`, 그리드 샘플링 — 전체 매트 저장은 OS 27+ 필요해 아직 안 함, §PersonCoverage.swift).
     public var captureQualityScore: Float = 1
     public var personCoverage: Float = 1
+    /// C6(T-602) `VisionFaceDriver` 용 추가 원시 기하값 — 여기선 순수 측정만, 중립 캘리브레이션·필터링은 드라이버(상태 보유) 책임.
+    /// 눈 종횡비를 좌우로 나눈 값(`eyeAspectRatio` 는 평균) — 짝눈 깜빡임 구분용.
+    public var eyeAspectRatioLeft: Float = 1
+    public var eyeAspectRatioRight: Float = 1
+    /// 바깥 입술 폭 / 얼굴 상자 폭 — 웃음(폭 넓어짐)·오므림(폭 좁아짐) 구분용 원시값.
+    public var mouthWidthRatio: Float = 0
+    /// 안쪽 입술 높이/폭 — 커지면(원형에 가까워지면) 오므림·펀넬 쪽 신호.
+    public var innerLipsAspect: Float = 0
+    /// 눈썹 중심 ↔ 눈 중심 세로 거리 / 얼굴 상자 폭 — 커지면 눈썹 올라감, 작아지면(또는 음수) 눈썹 내려감.
+    public var browRaiseLeft: Float = 0
+    public var browRaiseRight: Float = 0
+    /// 동공 위치 ↔ 눈 상자 중심, 눈 상자 반폭·반높이로 정규화한 좌우 평균(-1…1 근방). 부호 규약은 🧪 실기기 미확인.
+    public var gazeX: Float = 0
+    public var gazeY: Float = 0
 }
 
 /// 희소 캡처 게이트.
@@ -75,6 +89,15 @@ struct PhotoFaceAnalysis: Sendable {
     /// T-302 — `PhotoFrameStatus` 와 같은 정의.
     var captureQualityScore: Float
     var personCoverage: Float
+    /// T-602 — `PhotoFrameStatus` 와 같은 정의.
+    var eyeAspectRatioLeft: Float
+    var eyeAspectRatioRight: Float
+    var mouthWidthRatio: Float
+    var innerLipsAspect: Float
+    var browRaiseLeft: Float
+    var browRaiseRight: Float
+    var gazeX: Float
+    var gazeY: Float
 }
 
 @MainActor
@@ -202,9 +225,25 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
             return (x1 - x0, y1 - y0)
         }
         let leftEyeBox = bbox(px(lm.leftEye)), rightEyeBox = bbox(px(lm.rightEye))
-        let ear = ((leftEyeBox.h / max(1, leftEyeBox.w)) + (rightEyeBox.h / max(1, rightEyeBox.w))) / 2
+        let earLeft = leftEyeBox.h / max(1, leftEyeBox.w), earRight = rightEyeBox.h / max(1, rightEyeBox.w)
+        let ear = (earLeft + earRight) / 2
         let innerLipsBox = bbox(px(lm.innerLips)), outerLipsBox = bbox(px(lm.outerLips))
         let mouthOpen = outerLipsBox.w > 1 ? innerLipsBox.h / outerLipsBox.w : 0
+        // T-602(VisionFaceDriver) 용 추가 원시 기하값 — 순수 측정만, 의미 부여(중립 대비)는 드라이버 쪽.
+        func centroid(_ pts: [SIMD2<Float>]) -> SIMD2<Float> { pts.isEmpty ? .zero : pts.reduce(.zero, +) / Float(pts.count) }
+        let faceW = Float(box.width)
+        let leftEyeC = centroid(px(lm.leftEye)), rightEyeC = centroid(px(lm.rightEye))
+        let leftBrowC = centroid(px(lm.leftEyebrow)), rightBrowC = centroid(px(lm.rightEyebrow))
+        let browRaiseLeft = faceW > 1 ? (leftEyeC.y - leftBrowC.y) / faceW : 0
+        let browRaiseRight = faceW > 1 ? (rightEyeC.y - rightBrowC.y) / faceW : 0
+        let mouthWidthRatio = faceW > 1 ? outerLipsBox.w / faceW : 0
+        let innerLipsAspect = innerLipsBox.w > 1 ? innerLipsBox.h / innerLipsBox.w : 0
+        var gazeX: Float = 0, gazeY: Float = 0
+        if let lp = px(lm.leftPupil).first, let rp = px(lm.rightPupil).first, leftEyeBox.w > 1, leftEyeBox.h > 1, rightEyeBox.w > 1, rightEyeBox.h > 1 {
+            let gxL = (lp.x - leftEyeC.x) / (leftEyeBox.w / 2), gyL = (lp.y - leftEyeC.y) / (leftEyeBox.h / 2)
+            let gxR = (rp.x - rightEyeC.x) / (rightEyeBox.w / 2), gyR = (rp.y - rightEyeC.y) / (rightEyeBox.h / 2)
+            gazeX = (gxL + gxR) / 2; gazeY = (gyL + gyR) / 2
+        }
         // T-302: 캡처 품질 점수. 실패해도(예: 얼굴이 이미 사라짐) 이 게이트만 통과시킨다 — 다른 값은 이미 다 구했다.
         let qualityScore = (try? await DetectFaceCaptureQualityRequest().perform(on: cg).first?.captureQuality?.score) ?? 1
         // T-302: 얼굴 상자 안 인물 매트 비율. `pixel(at:)` 만 OS 26 에서 되고 전체 매트(`pixelBuffer`)는 OS 27+ 라
@@ -217,7 +256,9 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         }
         return PhotoFaceAnalysis(points: px(lm.allPoints), keyPoints: key, box: box, pose: pose, visionYawPitch: SIMD2(vy, vp),
                                  confidence: f.confidence, width: cg.width, height: cg.height, eyeAspectRatio: ear, mouthOpenRatio: mouthOpen,
-                                 captureQualityScore: qualityScore, personCoverage: coverage)
+                                 captureQualityScore: qualityScore, personCoverage: coverage,
+                                 eyeAspectRatioLeft: earLeft, eyeAspectRatioRight: earRight, mouthWidthRatio: mouthWidthRatio,
+                                 innerLipsAspect: innerLipsAspect, browRaiseLeft: browRaiseLeft, browRaiseRight: browRaiseRight, gazeX: gazeX, gazeY: gazeY)
     }
 
     /// 얼굴 상자 평균 밝기 (0…1, sRGB 평균).
@@ -256,7 +297,9 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
                                   brightness: b, faceWidthRatio: Float(a.box.width) / Float(max(1, image.width)), landmarkCount: a.points.count,
                                   imageWidth: image.width, imageHeight: image.height, confidence: a.confidence,
                                   eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio,
-                                  captureQualityScore: a.captureQualityScore, personCoverage: a.personCoverage)
+                                  captureQualityScore: a.captureQualityScore, personCoverage: a.personCoverage,
+                                  eyeAspectRatioLeft: a.eyeAspectRatioLeft, eyeAspectRatioRight: a.eyeAspectRatioRight, mouthWidthRatio: a.mouthWidthRatio,
+                                  innerLipsAspect: a.innerLipsAspect, browRaiseLeft: a.browRaiseLeft, browRaiseRight: a.browRaiseRight, gazeX: a.gazeX, gazeY: a.gazeY)
     }
 
     // MARK: 촬영

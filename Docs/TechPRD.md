@@ -265,6 +265,8 @@ M6 이후 F2 → F3 → F5 → F6 → F8 → F9 공통(F4 는 M5 가 대신, F7 
 
 ### 6.8 라이브 구동 (`CoursonaDrive`) — "페르소나처럼"
 
+> 🔌 **구현(T-601~603, 2026-10-06)**: 아래 표의 세 드라이버 + 우선순위 합성(`FaceDriverCoordinator`: ARKit > Vision > 마이크만)이 코드로 존재한다. `VisionFaceDriver` 의 특징 추출(`VisionFaceSignals`, 순수 로직)은 합성 데이터로 단위 테스트했지만, **실제 카메라로 사람 얼굴을 추적하는 것 자체는 아직 확인 못 했다** — `RunCodeSnippet` 으로 켜 봤는데 이 개발 환경의 카메라 권한이 `.notDetermined` 라 승인 대화상자를 눌러줄 수가 없었다(T-307 과 같은 종류의 "상호작용 실행이 필요한" 한계). `ARKitFaceDriver` 의 머리 자세(yaw/pitch → 쿼터니언)도 실기기 없이는 축·부호가 맞는지 모른다. 자세한 내용은 `Docs/Tasks.md` T-601/602.
+
 | 소스 | 플랫폼 | 출력 | 비고 |
 |---|---|---|---|
 | `ARKitFaceDriver` | iPhone·iPad(`isSupported`) | ARKit 52 + `faceTransform`(고개) | 초상 `FaceCaptureSession` 라이브 경로 재사용, 60 Hz |
