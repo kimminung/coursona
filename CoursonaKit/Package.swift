@@ -61,7 +61,8 @@ let package = Package(
         ),
         .target(
             name: "CoursonaTexture",
-            dependencies: ["CoursonaCore"],
+            // CoursonaFace(C5, T-502): TextureBuilder 가 내부에서 캡(눈·입)을 닫아 그 UV 섬까지 같은 파이프라인으로 투영한다.
+            dependencies: ["CoursonaCore", "CoursonaFace"],
             // Metal 커널 소스는 리소스로 복사해 런타임에 컴파일한다 (MetalTextureBackend)
             resources: [.copy("Shaders")],
             swiftSettings: [.swiftLanguageMode(.v5)]

@@ -11,10 +11,16 @@
 //  가시성(T-401): ① 컷 카메라에서 **변형 메시의 깊이 버퍼**를 렌더해 자기 가림(코가 뺨을 가림) 을 거르고 ② 캡처 깊이(메시에 정합한 것) 와 ±허용치 일치를 소프트 가중치로.
 //  CPU 참조 구현. Metal 백엔드(`MetalTextureBackend`)는 3단계와 양방향 필터를 대신한다 — 같은 수식, 256² 패리티 테스트.
 //
+//  C5(T-502) — 1 geometry 단계에서 `CapBuilder.addingCaps` 로 눈·입 구멍을 먼저 닫는다(`BustEntity` 가 렌더용으로
+//  하는 것과 같은 패턴: 피팅된 좌표를 넣고 같은 함수를 부른다, 저장할 캡 데이터는 없다). 그래야 캡 삼각형도 이 아래의
+//  일반 다중 컷 카메라 투영을 그대로 받아 눈·입 내용물이 채워진다 — 캡 전용 투영 코드가 따로 필요 없다. 구멍이 없는
+//  템플릿(지금의 합성 템플릿)은 캡이 전부 nil 이라 동작이 그대로다.
+//
 
 import Foundation
 import simd
 import CoursonaCore
+import CoursonaFace
 
 public enum TextureStage: Int, CaseIterable, Sendable {
     case geometry = 0, projection, accumulate, fill, finish
@@ -126,9 +132,13 @@ public enum TextureBuilder {
 
         // ---- 1 geometry ------------------------------------------------------------------
         tick(.geometry, 0)
+        // C5(T-502): 피팅된 좌표를 넣고 눈·입 구멍을 먼저 닫는다(`BustEntity` 와 같은 패턴) — 이 아래부터는
+        // `t` 가 캡이 닫힌 템플릿을 가리킨다. 구멍이 없으면(지금의 합성 템플릿) 캡이 전부 nil 이라 그대로다.
+        var fittedForCaps = t
+        if identity.positions.count == t.vertexCount { fittedForCaps.positions = identity.positions }
+        let t = CapBuilder.addingCaps(to: fittedForCaps).template
         let render = t.makeRenderMesh()
-        let src = identity.positions.count == t.vertexCount ? identity.positions : t.positions
-        let rPos = render.expand(src)
+        let rPos = render.expand(t.positions)
         let rNrm = Geometry.vertexNormals(positions: rPos, indices: render.indices)
         let S = o.size
         let raster = TexelRaster(render: render, size: S, supersample: o.supersample)
@@ -414,9 +424,11 @@ public enum TextureBuilder {
     /// 진단: 텍셀 UV 하나에 어느 컷의 어떤 표본이 들어오는지 (CLI `--texture … probe=u,v`).
     public static func probe(bundle: CaptureBundle, template t: BustTemplate, identity: Identity, alignments: [ShotKind: simd_float4x4],
                              uv: SIMD2<Float>, options o: TextureBuildOptions) throws -> [String] {
+        var fittedForCaps = t
+        if identity.positions.count == t.vertexCount { fittedForCaps.positions = identity.positions }
+        let t = CapBuilder.addingCaps(to: fittedForCaps).template
         let render = t.makeRenderMesh()
-        let src = identity.positions.count == t.vertexCount ? identity.positions : t.positions
-        let rPos = render.expand(src)
+        let rPos = render.expand(t.positions)
         let rNrm = Geometry.vertexNormals(positions: rPos, indices: render.indices)
         let shots = try makeContexts(bundle: bundle, template: t, alignments: alignments, render: render, positions: rPos, normals: rNrm, options: o)
         let S = 512
