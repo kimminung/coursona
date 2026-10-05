@@ -305,7 +305,9 @@ public enum SyntheticTemplate {
         }
         for s in ArkitShape.allCases { manifest.shapeMaxDisplacementMM[s.rawValue] = (deltas[s] ?? []).reduce(0) { max($0, simd_length($1)) } * 1000 }
         manifest.eyeL = [0.032, 0.44, eyeZ]; manifest.eyeR = [-0.032, 0.44, eyeZ]; manifest.eyeRadius = 0.012
-        manifest.uvRegions = ["face": [0, 0, 1, 0.5], "scalpNeck": [0, 0.5, 1, 0.85], "shoulders": [0, 0.85, 1, 1]]
+        manifest.uvRegions = ["face": [0, 0, 1, 0.5], "scalpNeck": [0, 0.5, 1, 0.85], "shoulders": [0, 0.85, 1, 1],
+                              // C5 T-501: 캡 전용 UV 섬(합성 템플릿 테스트용 — 실제 블렌더 내보내기는 아직 이 키들을 안 준다, Docs/Tasks.md C5 참고).
+                              "cap_eye_L": [0.80, 0.90, 0.88, 0.98], "cap_eye_R": [0.90, 0.90, 0.98, 0.98], "cap_mouth": [0.80, 0.80, 0.98, 0.88]]
         manifest.boneRest = Dictionary(uniqueKeysWithValues: zip(jointNames, restPos.map(\.array)))
         manifest.clips = []
         var template = BustTemplate(manifest: manifest, positions: pos, uvs: uv, indices: idx, shapeDeltas: deltas, skin: skin, skeleton: skeleton)

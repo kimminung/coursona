@@ -63,7 +63,7 @@
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-501 | `TextureBuilder` `faceOnly` 프리셋: 얼굴 UV + 캡 UV 섬(아틀라스 여백 우선, Q8) | §6.5 | ⏳ |
+| T-501 | `TextureBuilder` `faceOnly` 프리셋: 얼굴 UV + 캡 UV 섬(아틀라스 여백 우선, Q8) | §6.5 | 🔄 — **선행 작업(캡 UV 섬) 완료**: `CapBuilder` 가 `manifest.uvRegions["cap_eye_L"/"cap_eye_R"/"cap_mouth"]` 을 읽어 그 사각형 안에 전용 원형 UV 섬을 만든다(없으면 옛 동작인 바깥 고리 UV 상속으로 조용히 되돌아감 — 지금의 합성 템플릿 기본 상태). 기존 `lid_L`/`lid_R`/`lip` 은 **눈꺼풀·입술 피부** 영역이라 용도가 달라 재사용하지 않고 새 키로 분리했다(`Formats.md` 에 계약 추가). 단위 테스트 3개. **아직 안 한 것**: `TextureBuilder` 자체의 `faceOnly` 옵션(얼굴+캡 섬만 2k/4k 전체 해상도로 처리하고 나머지는 512² 스플랫 색 추출용 한 장만 — 지금은 옵션 없이 전체 UV 를 항상 풀 해상도로 처리한다) — T-503 전에 필요하면 이어서. **실제 블렌더 내보내기는 아직 `cap_eye_L` 등 키를 안 준다** — C5 가 진행되면 구체적인 블렌더 요청사항으로 정리할 것(사용자가 Blender+Claude Desktop MCP 로 작업 가능) |
 | T-502 | 눈 캡·입 캡 텍스처 투영(정면 중립 컷의 눈, 입 벌림 컷의 치아·입안) | §6.5 | ⏳ |
 | T-503 | `CoursonaSplat`: 얼굴면 밖 삼각형 바인딩(≤60k), 색·불투명도 초기화, `splats.bin` | §6.6 | ⏳ |
 | T-504 | `GaussianSplatResource.BufferResource` 브리지, 시뮬레이터·실패 시 고스트 메시 폴백 | §6.6 | ⏳ |

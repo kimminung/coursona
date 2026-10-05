@@ -102,7 +102,10 @@ public enum CapBuilder {
         }
 
         /// 발견한 경계 고리를 "고리(재사용) → 중간 고리(신규) → 중심(신규)" 로 닫는다.
-        func close(loop: [Int], pocket: Bool) -> CapClosure {
+        /// `uvIsland` 이 있으면(C5, T-501) 그 사각형 안에 전용 UV 섬(원형 매개변수화)을 만든다 — 바깥 고리 UV 를
+        /// 그대로 물려받으면 눈·입 안쪽이 주변 피부 텍셀을 그대로 베껴 써서 T-502(눈·입 내용물 투영)가 불가능하다.
+        /// 템플릿에 그 키가 없으면(아직 블렌더 쪽에서 섬을 안 비워 둠) 옛 동작(바깥 고리 UV 상속)으로 조용히 되돌아간다.
+        func close(loop: [Int], pocket: Bool, uvIsland: [Float]?) -> CapClosure {
             let n = loop.count
             let triStart = indices.count
             let ringPos = loop.map { positions[$0] }
@@ -110,7 +113,20 @@ public enum CapBuilder {
             var nFace = ringPos.reduce(SIMD3<Float>.zero) { $0 + simd_normalize($1 - c) }
             nFace = simd_length_squared(nFace) > 1e-10 ? simd_normalize(nFace) : SIMD3(0, 0, 1)
             let avgR = Swift.max(ringPos.reduce(Float(0)) { $0 + simd_length($1 - c) } / Float(n), 1e-5)
-            let midUV = loop.map { uvs[$0] } // 안쪽은 텍스처가 중요하지 않다(C5 에서 다듬는다) — 바깥 고리 UV를 그대로 물려받는다.
+            let midUV: [SIMD2<Float>]
+            let centerUV: SIMD2<Float>
+            if let r = uvIsland, r.count == 4 {
+                let cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2
+                let rx = abs(r[2] - r[0]) / 2 * 0.85, ry = abs(r[3] - r[1]) / 2 * 0.85 // 섬 안쪽으로 여백(경계 텍셀 누출 방지)
+                midUV = (0..<n).map { i in
+                    let a = Float(i) / Float(n) * 2 * .pi
+                    return SIMD2(cx + rx * cos(a), cy + ry * sin(a))
+                }
+                centerUV = SIMD2(cx, cy)
+            } else {
+                midUV = loop.map { uvs[$0] } // 섬이 없으면(옛 동작): 바깥 고리 UV를 그대로 물려받는다.
+                centerUV = midUV[0]
+            }
 
             var midIDs: [Int] = []; midIDs.reserveCapacity(n)
             for i in 0..<n {
@@ -125,7 +141,7 @@ public enum CapBuilder {
             }
             var centerP = c - nFace * (avgR * domeInset)
             if pocket { centerP -= nFace * mouthPocketDepth }
-            let centerID = appendVertex(centerP, normal: -nFace, uv: midUV[0])
+            let centerID = appendVertex(centerP, normal: -nFace, uv: centerUV)
 
             for i in 0..<n {
                 let j = (i + 1) % n
@@ -143,15 +159,15 @@ public enum CapBuilder {
         var usedVertices = Set<Int>()
         var eyeLeft: CapClosure? = nil, eyeRight: CapClosure? = nil, mouth: CapClosure? = nil
         if let loop = nearestLoop(to: template.manifest.eyeCenterL, excluding: usedVertices) {
-            usedVertices.formUnion(loop); eyeLeft = close(loop: loop, pocket: false)
+            usedVertices.formUnion(loop); eyeLeft = close(loop: loop, pocket: false, uvIsland: template.manifest.uvRegions["cap_eye_L"])
         }
         if let loop = nearestLoop(to: template.manifest.eyeCenterR, excluding: usedVertices) {
-            usedVertices.formUnion(loop); eyeRight = close(loop: loop, pocket: false)
+            usedVertices.formUnion(loop); eyeRight = close(loop: loop, pocket: false, uvIsland: template.manifest.uvRegions["cap_eye_R"])
         }
         let mouthSeed: SIMD3<Float>? = template.manifest.mouthCenter.map { SIMD3($0[0], $0[1], $0[2]) }
             ?? template.manifest.patchLoops["mouth"].map { centroid($0) }
         if let seed = mouthSeed, let loop = nearestLoop(to: seed, excluding: usedVertices) {
-            usedVertices.formUnion(loop); mouth = close(loop: loop, pocket: true)
+            usedVertices.formUnion(loop); mouth = close(loop: loop, pocket: true, uvIsland: template.manifest.uvRegions["cap_mouth"])
         }
 
         var newTemplate = template

@@ -30,7 +30,7 @@ v1(코너 UV 없음)도 읽는다. 패치 정점(0…1219)은 Apple OBJ 와 위�
 | groups {이름: [id]} | ARKitFace, Scalp, EarL, EarR, Neck(가중치 > 0), Shoulders, LipInner, LidInner |
 | groupWeights {이름: [w]} | Neck·Root·Head 스킨 가중치 (groups 순서) |
 | patchLoops {eye_left[24], eye_right[24], mouth[36], outer[56]} | OBJ 경계 루프 |
-| uvRegions {이름: [u0,v0,u1,v1]} | face, head_neck, ear_L, ear_R, torso, lid_L, lid_R, lip |
+| uvRegions {이름: [u0,v0,u1,v1]} | face, head_neck, ear_L, ear_R, torso, lid_L, lid_R, lip. **코르소나 추가(C5, T-501, 선택)**: `cap_eye_L`/`cap_eye_R`/`cap_mouth` — 눈·입 캡(`CapBuilder`, 분리 엔티티 없이 메시 안에서 구멍을 닫는 신규 정점)専용 UV 섬. 블렌더 쪽에서 UV 언랩 시 작게 비워 두고 내보내야 한다(기존 `lid_L`/`lid_R`/`lip` 은 눈꺼풀·입술 **피부** 영역이라 용도가 다르다 — 재사용하면 캡이 그 피부 텍셀을 그대로 베낀다). 키가 없으면 `CapBuilder` 가 바깥 고리 UV를 상속하는 옛 동작으로 조용히 되돌아간다(지금의 합성 템플릿 기본 동작) |
 | symmetryMap [i32] | X 미러 최근접 정점 (없으면 −1) |
 | eyeL, eyeR, eyeRadius, eyeSpacing | 눈알 중심·반지름·간격 |
 | mouthCenter, chinY, crownY | 측정값 (입 루프 평균 등) |
