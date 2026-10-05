@@ -75,7 +75,8 @@ let package = Package(
         ),
         .target(
             name: "CoursonaRig",
-            dependencies: ["CoursonaCore", "CoursonaFace"],
+            // CoursonaSplat(C5, T-504 배선): BustEntity 가 스플랫을 바인딩해 GaussianSplatComponent 로 붙인다(지원 시).
+            dependencies: ["CoursonaCore", "CoursonaFace", "CoursonaSplat"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(

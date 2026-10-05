@@ -16,6 +16,7 @@ import Metal
 import simd
 import CoursonaCore
 import CoursonaFace
+import CoursonaSplat
 
 public enum DeformationPath: String, Sendable { case gpuLowLevelDeformation = "LowLevelDeformation (GPU)", cpuBlend = "CPU 블렌드 (폴백)" }
 
@@ -48,6 +49,14 @@ public final class BustEntity {
     private var ghostMaterial: PhysicallyBasedMaterial
     /// 얼굴면 밖(머리·목·어깨)을 반투명 "고스트"로 보여줄지. 기본은 완전히 뺀다(TechPRD §3·§6.2 — "투명 = 파트 제외").
     public private(set) var isGhostVisible = false
+    /// 캡 열기 전 원본 템플릿(T-504 배선) — `SplatBinder.build` 가 `TextureBuilder`/`CapBuilder` 와 같은 패턴으로
+    /// 스스로 피팅·캡 닫기를 다시 하므로, 이미 캡이 닫힌 `self.template` 을 넘기면 캡 삼각형이 이중으로 처리된다.
+    private let rawTemplateForSplats: BustTemplate
+    /// 패딩(캡 정점만큼 늘리기) 전 Identity — 위와 같은 이유로 `SplatBinder` 에는 이 원본을 넘긴다.
+    private let identityForSplats: Identity
+    /// `applySplats` 가 붙인 스플랫 엔티티(성공 시에만 존재) — §6.6 "스플랫: 폴백" UI 판단은 `splatsActive` 로.
+    private var splatEntity: Entity?
+    public private(set) var splatsActive = false
 
     public init(template rawTemplate: BustTemplate, identity: Identity? = nil, material: Material? = nil, preferGPU: Bool = true, enableFaceCaps: Bool = true) throws {
         var id = identity ?? Identity.fromTemplate(rawTemplate)
@@ -60,6 +69,9 @@ public final class BustEntity {
         let template = capped.template
         self.template = template
         self.capClosure = capped
+        // T-504 배선: 캡 열기 전(=rawTemplate 구조 + 피팅 좌표) 상태를 보존해 `SplatBinder` 에 그대로 넘긴다.
+        self.rawTemplateForSplats = fittedTemplate
+        self.identityForSplats = id
         if id.positions.count != template.vertexCount {
             // 캡 이전(또는 다른 템플릿 버전) Identity 를 받으면 늘어난 만큼(캡이 새로 만든 정점) 채운다.
             if id.positions.count < template.vertexCount {
@@ -247,6 +259,34 @@ public final class BustEntity {
         guard var mc = model.components[ModelComponent.self] else { return }
         mc.materials = [mc.materials.first ?? ghostMaterial, ghostMaterial]
         model.components[ModelComponent.self] = mc
+    }
+
+    /// T-504 배선: 얼굴면 밖(머리·목·어깨)을 `SplatBinder` 로 바인딩해 `GaussianSplatComponent` 로 붙여본다.
+    /// 지원 안 하면(iOS 전부, macOS < 27, Apple7 미만 GPU, 레코드가 비는 경우) 조용히 고스트 폴백(`setGhostVisible(true)`)
+    /// 으로 되돌아가고 false 를 돌려준다 — §6.6 "스플랫: 폴백" UI 가 이 값을 그대로 보여주면 된다.
+    @discardableResult
+    public func applySplats(splatColor: RGBAImage? = nil, fallbackSkin: SIMD3<Float> = SIMD3(0.70, 0.55, 0.45),
+                            options: SplatBuildOptions = SplatBuildOptions()) -> Bool {
+        #if os(macOS)
+        if #available(macOS 27.0, *), SplatGPUBridge.isSupported() {
+            let bound = SplatBinder.build(template: rawTemplateForSplats, identity: identityForSplats,
+                                          splatColor: splatColor, fallbackSkin: fallbackSkin, options: options)
+            if !bound.records.isEmpty, let component = SplatGPUBridge.makeComponent(records: bound.records) {
+                let entity = splatEntity ?? {
+                    let e = Entity(); e.name = "BustSplats"; root.addChild(e); splatEntity = e; return e
+                }()
+                entity.components.set(component)
+                entity.isEnabled = true
+                splatsActive = true
+                setGhostVisible(false)
+                return true
+            }
+        }
+        #endif
+        splatEntity?.isEnabled = false
+        splatsActive = false
+        setGhostVisible(true)
+        return false
     }
 }
 

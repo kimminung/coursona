@@ -236,6 +236,8 @@ M6 이후 F2 → F3 → F5 → F6 → F8 → F9 공통(F4 는 M5 가 대신, F7 
 학습 없음, 바인딩 + 초기화만.
 
 > 🧪 **실기기·빌드로 확인(T-504, 2026-10-06)**: `GaussianSplatComponent` 는 iOS SDK 에 타입 자체가 없고(아마 macOS·visionOS 전용) `@available(macOS 27, *)` 다. 즉 **지금 SDK 기준 iPhone·iPad 는 이 절의 네이티브 스플랫 렌더를 아예 못 쓴다** — Mac(OS 27+, Apple7 GPU)만 된다. §4 목표 1번("iPhone·iPad·Mac 전부")의 "입체감" 부분은 iOS 에서 고스트 파트 폴백이 사실상 기본 경로라는 뜻이다. 자세한 내용은 아래 "구현 노트(C5, T-504)".
+>
+> 🔌 **배선 완료(T-504b, 2026-10-06)**: `BustEntity.applySplats(...)` 가 `SplatBinder.build` → `SplatGPUBridge.makeComponent` → `"BustSplats"` 자식 엔티티 부착까지 연결한다(§6.7). 지원 Mac 에서는 고스트가 자동으로 꺼지고(`setGhostVisible(false)`), 미지원(iOS 전부·macOS<27·Apple7 미만)이면 고스트 폴백으로 조용히 돌아간다. 이 개발 Mac(OS 27.0.1, Apple M3)에서 `RunCodeSnippet` 로 실제 부착까지 확인함.
 
 | 항목 | 결정 |
 |---|---|
@@ -254,6 +256,7 @@ M6 이후 F2 → F3 → F5 → F6 → F8 → F9 공통(F4 는 M5 가 대신, F7 
 ### 6.7 런타임 리그 (`CoursonaRig`)
 
 - `BustEntity`: 파트 `[faceSkin, eyeCapL, eyeCapR, mouthCap, ghost?]`, 머티리얼 각각(`PhysicallyBasedMaterial`, 피부 roughness 0.55; 눈 캡 roughness 0.15 + clearcoat 0.6 으로 촉촉함; 입 캡 roughness 0.7). `LowLevelDeformation` 블렌딩은 전체 정점.
+- **스플랫 자식(T-504b)**: `applySplats(...)` 호출 시 `root` 아래 `"BustSplats"` 자식 엔티티에 `GaussianSplatComponent` 를 붙인다(§6.6, Mac OS 27+ Apple7 GPU 만). 성공하면 `ghost` 가 자동으로 꺼지고, 미지원이면 `ghost` 로 되돌아간다 — 둘이 동시에 보이지 않는다.
 - **시선**: 눈 캡 머티리얼의 `textureCoordinateTransform.offset` 을 `eyeLook{In,Out,Up,Down}_{L,R}` 가중치로 이동(최대 ±0.08 UV ≈ 홍채 반지름의 절반). 기하는 움직이지 않으므로 뚫림이 없다. 자동 시선 미세 움직임(초상 FaceRig)은 같은 경로.
 - **깜빡임·눈꺼풀**: 패치는 템플릿/사용자 델타, 띠는 F8 의 c 기준 회전 델타. 눈 캡 정점의 델타 = 0.
 - **입**: 입술 패치·띠는 셰이프, 입 캡 포켓은 LipInner 평균 변위를 따라간다(F8). `jawOpen` 에 따라 포켓 바닥이 아래로 열린다.

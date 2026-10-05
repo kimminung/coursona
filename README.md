@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **136개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **136개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지와 `BustEntity` 장면 배선까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -41,7 +41,8 @@
 - **RealityKit 브리지(T-504) — 완료, 그리고 중요한 제약 발견** — `SplatGPUBridge`: Apple 공식 예제와 같은 레이아웃(인터리브 14 float, `LowLevelBuffer` + `BufferDescriptor` 5개)으로 `[SplatRecord]` → `GaussianSplatComponent`. 실제로 빌드해보고서야 알게 된 것 둘: ① `GaussianSplatComponent`/`GaussianSplatResource`는 `@available(macOS 27, *)` — 이 프로젝트 배포 타깃(OS 26)보다 높다 ② **iOS SDK 엔 이 타입이 아예 없다**("cannot find in scope", iPhone 시뮬레이터 빌드로 확인) — macOS(아마 visionOS도) 전용으로 보인다. **즉 지금 기준 iPhone·iPad에서는 네이티브 가우시안 스플랫 입체감을 아예 못 쓴다** — Mac(OS 27+, Apple7 GPU)만 된다. iOS에서는 고스트 파트 폴백이 "임시"가 아니라 사실상 기본 경로가 됐다. `isSupported()`는 두 플랫폼 공통으로(iOS는 항상 false) 가용성 체크 없이 부를 수 있게 했다. 이 Mac(M3, macOS 27.0.1)에서 실제로 `GaussianSplatComponent`를 만들어 통과까지 확인했다 — 컴파일만 되고 안 돌려본 코드가 아니다.
 - **검증**: `cd CoursonaKit && swift test` → **136개 테스트, 30개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
 - **남은 것(C3)**: Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용), 배경 제거용 전체 인물 매트(OS 27 배포 타깃으로 올릴 때 재검토). `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — 기존 경험적 깊이 보정(`DepthRegistration`)이 이미 잘 동작하고, calibration 데이터의 실제 필드는 TrueDepth 실기기 없이는 검증할 방법이 없어서 섣불리 손대는 게 더 위험하다고 판단했다.
-- **남은 것(C5)**: 실제 `BustEntity` 장면에 스플랫 컴포넌트를 붙이는 배선(브리지까지만 끝남), Mac 실기기 성능 측정(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
+- **`BustEntity` 배선(T-504b, 완료)** — `applySplats(splatColor:fallbackSkin:options:)`: `SplatBinder.build`(캡 열기 전 원본 템플릿+Identity를 따로 보관해 캡이 이중 처리되지 않게 함) → `SplatGPUBridge.makeComponent` → 성공하면 `"BustSplats"` 자식 엔티티에 `GaussianSplatComponent`를 붙이고 고스트를 자동으로 끈다. 미지원(iOS 전부·macOS<27·Apple7 미만 GPU·레코드 없음)이면 조용히 고스트 폴백. `CoursonaRig`가 `CoursonaSplat`에 새로 의존. 패키지 테스트 대상이 아닌 `BustEntity`(RealityKit·`@MainActor` 의존, F5/F6과 같은 이유)라 이 개발 Mac(OS 27.0.1)에서 `RunCodeSnippet`로 실제 부착(`splatsActive=true`, 고스트 자동 꺼짐)까지 확인했다.
+- **남은 것(C5)**: Mac 실기기 성능 측정(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
 
 ### 지금 이 앱을 띄우면 보이는 것
 
@@ -173,7 +174,7 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣·UserShapeDeltas/F7)
   Sources/CoursonaFace           얼굴면 완성 — CapBuilder(C1·C2 구현됨, C5 에서 캡 전용 UV 섬 추가)·SelfIntersectionCheck
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU), 내부에서 캡(눈·입)을 닫고 투영(C5, T-502)
-  Sources/CoursonaSplat          입체감(스플랫) — SplatBinder·SplatFile(splats.bin)·SplatGPUBridge(RealityKit, Mac 전용) 구현됨
+  Sources/CoursonaSplat          입체감(스플랫) — SplatBinder·SplatFile(splats.bin)·SplatGPUBridge(RealityKit, Mac 전용) 구현됨, BustEntity.applySplats 로 배선됨
   Sources/CoursonaRig            BustEntity(LowLevelMesh, 2파트 렌더)·FaceRig·ClipPlayer
   Sources/CoursonaDrive          라이브 구동(C6 에서 채움)
   Sources/CoursonaIO             패키지·전송·zip
@@ -204,7 +205,7 @@ swift test          # 136개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C2 | 얼굴면 완성(A 등급) | ✅ |
 | C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사·저장 전 깊이 검증·B 등급 캡처 품질·인물 매트 게이트·iPad 가로 거치 기록 완료, 카메라 보정 데이터(의도적 보류)·Vision 조밀 대응·단안 깊이 모델·전체 인물 매트(OS 27+)·🧪 실기기 체크리스트는 남음 |
 | C4 | 단안 피팅(B·C 등급) | ✅ (코드·테스트는 C0 포팅분이 이미 만족, 🧪 실기기 빌드만 남음) |
-| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503)·RealityKit 브리지(T-504, Mac 전용으로 판명) 완료, 실제 장면 배선·실기기 성능(T-505)은 남음 |
+| C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503)·RealityKit 브리지(T-504, Mac 전용으로 판명)·`BustEntity` 장면 배선(T-504b) 완료, 실기기 성능(T-505)은 남음 |
 | C6 | 라이브 구동(거울) | ⏳ |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | ⏳ |
 | C8 | 검수·마감 | ⏳ |
