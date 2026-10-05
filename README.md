@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 거의 완료, C6 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **149개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지와 `BustEntity` 장면 배선까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 라이브 구동 드라이버(ARKit·Vision·마이크, 우선순위 합성)도 코드로는 다 있지만 **카메라 권한 대화상자를 자동으로는 못 눌러 실제 추적은 아직 확인 못 했다** — 이것도 아래 참고. 화면 UI 는 아직 자리표시자이고, 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 거의 완료, C6 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **149개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지와 `BustEntity` 장면 배선까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 라이브 구동 드라이버(ARKit·Vision·마이크, 우선순위 합성)도 코드로는 다 있지만 **카메라 권한 대화상자를 자동으로는 못 눌러 실제 추적은 아직 확인 못 했다** — 이것도 아래 참고. 화면 UI 는 1단계(뼈대 — 탭 내비게이션·등급 선택·권한 화면)가 막 끝났고, 나머지 화면(캡처·빌드·검수·거울·저장·갤러리·전송)은 단계별로 이어서 만드는 중이다. 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -53,11 +53,26 @@
 
 ### 지금 이 앱을 띄우면 보이는 것
 
-아래는 Stitch 목업이 아니라 **지금 리포의 `ContentView` 를 세 플랫폼 각각에서 실제로 렌더링한 캡처**다(2026-10-05). 화면 UI 는 아직 C8 전까지 자리표시자지만, 같은 `CoursonaKit` 코드가 **Mac·iPhone·iPad 세 곳 모두에서 빌드·실행**되고 `TierClassifier` 가 그때그때 실시간으로 기기 등급을 판정하는 것을 보여 준다. 셋 다 Face ID 카메라가 없는 기기/시뮬레이터라 올바르게 **B 등급**으로 판정했다 — 플랫폼이 달라도 같은 판정 로직이 같은 결과를 낸다는 것 자체가 테크 PRD 1번 목표("세 플랫폼에서 같은 모습")의 가장 작은 증거다.
+**2026-10-06, UI 1단계 완료 후**: 자리표시자이던 `ContentView` 는 지웠고, 이제 실제 화면 1(등급 선택)·화면 9(권한)와 4탭 내비게이션(스튜디오·갤러리·정밀도·기기 연동)이 있다. 아래는 Stitch 목업이 아니라 **지금 리포 코드를 `RenderPreview` 로 Mac·iPhone·iPad 각각 실제 렌더링한 캡처**다. 이 기기(Mac)는 Face ID 카메라가 없어 올바르게 **B 등급을 추천 배지로 표시**했다 — 등급 판정이 화면에 그대로 반영되는 것까지 확인된다.
+
+| Mac — 화면 1(스튜디오) | Mac — 화면 9(권한) |
+|---|---|
+| <img src="Docs/screenshots/c8-ui1-mac-starttierview.png" alt="코르소나 앱, Mac — 화면 1 등급 선택, B 등급 추천 배지" width="320"> | <img src="Docs/screenshots/c8-ui1-mac-permissionsview.png" alt="코르소나 앱, Mac — 화면 9 권한·시스템 상태" width="320"> |
+
+| iPhone — 하단 탭 4개 | iPad — 상단 탭 4개 |
+|---|---|
+| <img src="Docs/screenshots/c8-ui1-iphone-rootview.png" alt="코르소나 앱, iPhone — 화면 1 + 하단 탭 4개(스튜디오·갤러리·정밀도·기기 연동)" width="200"> | <img src="Docs/screenshots/c8-ui1-ipad-rootview.png" alt="코르소나 앱, iPad — 화면 1 + 상단 탭 4개" width="320"> |
+
+작은 발견 하나: 처음엔 iPhone 렌더링에서 글래스 카드·탭 바 대비가 흐릿하게 나왔다 — 시스템이 라이트 모드일 때 `.glassEffect()` 가 UXPRD 가 전제하는 다크 배경과 안 맞아서였다. `RootView` 루트에 `.preferredColorScheme(.dark)` 를 강제해서 고쳤다(UXPRD §7 이 애초에 다크를 기본 테마로 정의해 둔 것과 일치).
+
+<details>
+<summary>이전 단계(C0~C3, 자리표시자였던 ContentView) 스크린샷 — 참고용, 접힘</summary>
 
 | Mac | iPhone | iPad |
 |---|---|---|
 | <img src="Docs/screenshots/c0-contentview-mac-tier-b.png" alt="코르소나 앱 ContentView, Mac에서 렌더링 — 등급 B 표시" width="220"> | <img src="Docs/screenshots/c3-contentview-iphone-tier-b.png" alt="코르소나 앱 ContentView, iPhone 시뮬레이터에서 렌더링 — 등급 B 표시" width="160"> | <img src="Docs/screenshots/c3-contentview-ipad-tier-b.png" alt="코르소나 앱 ContentView, iPad 시뮬레이터에서 렌더링 — 등급 B 표시" width="200"> |
+
+</details>
 
 #### 🧪 실기기(2026-10-05) — iPhone 16·MacBook Air M4, 전면 카메라
 
@@ -197,7 +212,13 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaIO             패키지·전송·zip
   Sources/CoursonaValidate       템플릿 계약 검사
   Tests/CoursonaKitTests         149개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests·SplatBinderTests·SplatFileTests·SplatGPUBridgeTests·OneEuroFilterTests·VisionFaceSignalsTests 포함)
-coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 는 아직 자리표시자
+coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 1단계(탭 셸·등급 선택·권한) 완료, 나머지는 단계별 진행 중
+  App/AppModel.swift      @Observable 앱 상태, AppTab(스튜디오·갤러리·정밀도·기기 연동)
+  DesignSystem/Theme.swift 색상 토큰(UXPRD §7)·TierBadge·StatusPill
+  RootView.swift           탭 셸(초상 AppTab 패턴 재사용)
+  Views/StartTierView.swift   화면 1 — 등급 3가지 카드 + 추천 배지
+  Views/PermissionsView.swift 화면 9 — 권한·시스템 상태
+  Views/ComingSoonView.swift  2~5단계 전 자리표시자(탭 전환은 바로 됨)
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
 tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제외 고정)
@@ -211,7 +232,7 @@ swift build        # 11개 모듈 + CLI 빌드
 swift test          # 149개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·스플랫 바인딩·GPU 브리지·splats.bin 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬·1€ 필터·Vision 얼굴 신호까지 전부 로컬에서 돈다
 ```
 
-앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
+앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 1단계(탭 셸·등급 선택·권한)까지 완료, 캡처·빌드·검수·거울·저장·갤러리·전송은 단계별로 이어서 만드는 중이다.
 
 ## 로드맵
 
@@ -225,7 +246,7 @@ swift test          # 149개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503)·RealityKit 브리지(T-504, Mac 전용으로 판명)·`BustEntity` 장면 배선(T-504b) 완료, 실기기 성능(T-505)은 남음 |
 | C6 | 라이브 구동(거울) | 🔄 — 드라이버 3종 + 우선순위 합성(T-601~603)·`FaceRigSystem` 합성 규칙·시선 눈 캡 UV 이동(T-604) 구현, 실기기·카메라 권한 상호작용 실행·성능 실측(T-605)은 남음 |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | ⏳ |
-| C8 | 검수·마감 | ⏳ |
+| C8 | 검수·마감 + 화면 UI(UXPRD 9개 화면) | 🔄 — UI 1단계(뼈대: 탭 셸·등급 선택·권한 화면, T-805) 완료, 2~6단계(캡처·빌드·검수·거울·저장·갤러리·전송·접근성, T-806~810)는 이어서 진행 중 |
 
 세부 작업 단위는 `Docs/Tasks.md` 참고.
 

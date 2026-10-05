@@ -96,10 +96,16 @@
 
 | ID | 작업 | 근거 | 상태 |
 |---|---|---|---|
-| T-801 | 검수 화면 구현(`Docs/UXPRD.md` 화면 4), 품질 카드 + FoundationModels 한 줄 설명(실패 시 고정 문구) | §6.10, UXPRD §5-4 | ⏳ |
+| T-801 | 검수 화면 구현(`Docs/UXPRD.md` 화면 5 "검수" — Tasks 구 표기 "화면 4"는 UXPRD 번호와 어긋나 정정), 품질 카드 + FoundationModels 한 줄 설명(실패 시 고정 문구) | §6.10, UXPRD §5-4 | ⏳ |
 | T-802 | 렌더 스냅샷 회귀 테스트(정면·좌30°·눈감기·입벌림·시선, 픽셀 차이 < 2%) | §9 | ⏳ |
 | T-803 | (선택, Q5) USDZ/PLY 내보내기 — 메뉴 항목으로만, Mac | §6.9 | ⏳ |
 | T-804 | 🧪 실기기 체크리스트 전항(§9 전체) 통과 | §9 | ⏳ |
+| T-805 | UI 1단계: 뼈대 — `DesignSystem/Theme.swift`(색상·`TierBadge`·`StatusPill`), `App/AppModel.swift`(`AppTab` 4개: 스튜디오·갤러리·정밀도·기기 연동), `RootView.swift`(탭 셸), `Views/StartTierView.swift`(화면 1), `Views/PermissionsView.swift`(화면 9), `Views/ComingSoonView.swift`(2~5단계 전 자리표시자) | UXPRD §3·§6 화면 1·9 | ✅ — 초상 `App/AppModel.swift`/`ContentView.swift` 의 `AppTab`+`TabView(selection:)` 패턴 그대로 재사용. `.preferredColorScheme(.dark)` 를 루트에 강제(UXPRD §7 기본 다크 테마) — 안 하면 iOS 에서 `.glassEffect()` 대비가 무너지는 걸 `RenderPreview` 로 실제 확인하고 고쳤다. 자리표시자이던 `ContentView.swift` 는 삭제(기능이 `StartTierView`로 흡수됨). Mac·iPhone 17 시뮬·iPad 시뮬·연결된 실기기(iPhone) 4곳 빌드 통과, 실기기에서 `RunProject`+`GetConsoleOutput` 으로 크래시 없음 확인, `RenderPreview` 로 Mac·iPhone·iPad 3곳 실제 렌더 확인(스크린샷 아님, MCP 도구로 직접 캡처) |
+| T-806 | UI 2단계: `CoursonaStudio` 모듈 신설(`PersonaBuildPipeline`: 캡처 번들→피팅→텍스처→스플랫→패키지), `CaptureTier` 를 `CoursonaCore` 로 이동, `Views/CaptureGuideView.swift`(화면 2, 초상 `GuidedCaptureView.swift` 포팅), `Views/PhotoSuitabilityView.swift`(화면 3) | UXPRD §6 화면 2·3, TechPRD §5 | ⏳ |
+| T-807 | UI 3단계: `CoursonaPackageStore`/`CoursonaManifest` 에 `tier`·`splats.bin` 저장/복원 추가(T-701 일부), `Views/BuildProgressView.swift`(화면 4), `Views/InspectionView.swift`(화면 5, T-801 과 통합), `Views/SaveShareView.swift`(화면 6b 저장부) | UXPRD §6 화면 4·5·6b | ⏳ |
+| T-808 | UI 4단계: `Views/MirrorView.swift`(화면 6, `FaceDriverCoordinator` 연결), `Views/LibraryView.swift`(화면 8, 저장된 `.coursona` 실제 목록) | UXPRD §6 화면 6·8 | ⏳ |
+| T-809 | UI 5단계: 초상 `Views/TransferView.swift` 포팅(화면 6b 송수신), 업그레이드 병합 플로우(화면 7b), Mac 3단 워크스페이스(사이드바/뷰포트/인스펙터)·iPad 가로 캡처 분할 | UXPRD §6 화면 6b·7b·Mac-1 | ⏳ |
+| T-810 | UI 6단계: 접근성(Dynamic Type·VoiceOver·Reduce Motion), UXPRD §6/§8 bilingual 문구 정확히 맞추기, §11 빈/에러 상태 전부 | UXPRD §9·§10·§11 | ⏳ |
 
 ## 블렌더 쪽 제안(참고, 초상 리포는 수정하지 않음)
 
