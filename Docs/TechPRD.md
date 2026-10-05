@@ -155,6 +155,12 @@ F10 DeltaCalibrator    jawOpen 진폭(미소 컷) — F7 이 치환했으면 생
 >
 > **추가(T-301, 2026-10-05)** — "저장 시 5/5 깊이 검증"은 `CoursonaCapture/DepthCoverage.swift` 로 완료: 필수 5컷(선택 2컷 제외) 중 깊이가 없는 걸 찾아 한글 안내 문장(어떤 컷을 다시 찍어야 하는지)까지 낸다. 순수 로직이라 합성 번들로 단위 테스트 4개. `coursona-validate --fit` 에도 연결해 실제 캡처 번들을 열어볼 때 바로 보인다.
 > `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — `DepthRegistration`(C0 포팅분, 깊이·메시 z 차의 중앙값을 재서 빼는 경험적 보정)가 이미 동작하고 있고, calibration 데이터는 TrueDepth 가 없는 시뮬레이터로는 실제 필드(좌표 규약·부호)를 검증할 방법이 없다. 검증 없이 손대면 초상(Chosang)의 회전 버그처럼 실기기에서만 드러나는 오류를 만들 위험이 더 크다고 판단했다 — 🧪 실기기 확보 후 재검토.
+>
+> **추가(T-302, 2026-10-05)** — B 등급 캡처 품질 점수·인물 매트 게이트. 새 Vision API 라 `RunCodeSnippet`(Xcode MCP) 로 실제 배포 타깃(OS 26)에서 컴파일이 되는지부터 먼저 확인했다(문서만으로는 가용성을 확신할 수 없었다):
+> - **캡처 품질**: `DetectFaceCaptureQualityRequest` → `FaceObservation.captureQuality.score`(0…1). OS 26 에서 바로 된다. `PhotoCaptureGate.minCaptureQuality`(0.5, TechPRD §6.3 그대로)로 게이팅.
+> - **인물 매트**: `GeneratePersonSegmentationRequest` 의 결과 전체(알파 마스크 이미지)를 꺼내는 `.pixelBuffer` 접근자는 **OS 27+ 가 필요하다** — `RunCodeSnippet` 으로 실제로 "only available in macOS 27.0 or newer" 컴파일 오류를 받아 확인했다(이 프로젝트 배포 타깃은 OS 26). 전체 매트 이미지를 저장해 배경을 제거하는 원래 계획은 **보류**한다.
+>   대신 같은 요청의 `pixel(at: NormalizedPoint)`(점 단위 샘플링)는 OS 26 에서 이미 된다 — 얼굴 상자를 5×5 그리드로 샘플링해 "이 상자가 실제로 사람으로 분류되는가" 비율을 게이트 신호로만 쓴다(`PersonCoverage.swift`). 배경 제거(텍스처 투영에서 벽지를 피부색으로 오인하는 문제)는 여전히 못 푼다 — 배포 타깃을 OS 27로 올릴 때 `.pixelBuffer` 로 재검토.
+> - 샘플링 로직(`PersonCoverage.ratio`)은 Vision 타입을 몰라도 되게 클로저로 분리해 순수 로직으로 테스트한다(5개). `PhotoSuitability`(T-303, C 등급)도 같은 두 값을 받도록 확장 — 기본값 1(측정 안 함)이라 기존 호출부는 그대로 통과한다.
 
 #### 단안 경로 (B·C 등급) — `MonoFitter`
 

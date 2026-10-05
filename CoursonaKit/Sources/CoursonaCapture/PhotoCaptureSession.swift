@@ -35,6 +35,10 @@ public struct PhotoFrameStatus: Sendable, Equatable {
     /// 선택 컷 게이트(C3·F7, B 등급): 눈 종횡비(높이/폭, 평균) · 입 벌림 비율(안쪽 입술 높이 / 바깥 입술 폭).
     public var eyeAspectRatio: Float = 1
     public var mouthOpenRatio: Float = 0
+    /// T-302: 캡처 품질 점수(`DetectFaceCaptureQualityRequest`, 0…1 — 조명·선명도·중앙 위치) · 얼굴 상자 안 인물 매트 비율
+    /// (`GeneratePersonSegmentationRequest`, 그리드 샘플링 — 전체 매트 저장은 OS 27+ 필요해 아직 안 함, §PersonCoverage.swift).
+    public var captureQualityScore: Float = 1
+    public var personCoverage: Float = 1
 }
 
 /// 희소 캡처 게이트.
@@ -49,6 +53,9 @@ public struct PhotoCaptureGate: Sendable, Equatable {
     /// 선택 컷(C3·F7) 임계값 — TechPRD §6.3: 눈 감기 `종횡비 < 0.12`, 입 벌림 `안쪽/바깥 입술 폭 > 0.25`.
     public var eyesClosedMaxAspect: Float = 0.12
     public var mouthOpenMinRatio: Float = 0.25
+    /// T-302: 캡처 품질 점수 ≥ 0.5(TechPRD §6.3), 얼굴 상자 인물 매트 비율 ≥ 0.6(그리드 샘플 대부분이 사람으로 분류돼야 함).
+    public var minCaptureQuality: Float = 0.5
+    public var minPersonCoverage: Float = 0.6
     public init() {}
 }
 
@@ -65,6 +72,9 @@ struct PhotoFaceAnalysis: Sendable {
     /// 선택 컷 게이트용(C3·F7) — `PhotoFrameStatus` 와 같은 정의.
     var eyeAspectRatio: Float
     var mouthOpenRatio: Float
+    /// T-302 — `PhotoFrameStatus` 와 같은 정의.
+    var captureQualityScore: Float
+    var personCoverage: Float
 }
 
 @MainActor
@@ -195,8 +205,19 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let ear = ((leftEyeBox.h / max(1, leftEyeBox.w)) + (rightEyeBox.h / max(1, rightEyeBox.w))) / 2
         let innerLipsBox = bbox(px(lm.innerLips)), outerLipsBox = bbox(px(lm.outerLips))
         let mouthOpen = outerLipsBox.w > 1 ? innerLipsBox.h / outerLipsBox.w : 0
+        // T-302: 캡처 품질 점수. 실패해도(예: 얼굴이 이미 사라짐) 이 게이트만 통과시킨다 — 다른 값은 이미 다 구했다.
+        let qualityScore = (try? await DetectFaceCaptureQualityRequest().perform(on: cg).first?.captureQuality?.score) ?? 1
+        // T-302: 얼굴 상자 안 인물 매트 비율. `pixel(at:)` 만 OS 26 에서 되고 전체 매트(`pixelBuffer`)는 OS 27+ 라
+        // 그리드 샘플링으로 "이 상자가 실제로 사람인가" 만 본다 — `PersonCoverage.swift` 머리말 참고.
+        var coverage: Float = 1
+        if let seg = try? await GeneratePersonSegmentationRequest().perform(on: cg) {
+            coverage = PersonCoverage.ratio(faceBoxImageCoords: box) { point in
+                seg.pixel(at: NormalizedPoint(imagePoint: point, in: size))
+            }
+        }
         return PhotoFaceAnalysis(points: px(lm.allPoints), keyPoints: key, box: box, pose: pose, visionYawPitch: SIMD2(vy, vp),
-                                 confidence: f.confidence, width: cg.width, height: cg.height, eyeAspectRatio: ear, mouthOpenRatio: mouthOpen)
+                                 confidence: f.confidence, width: cg.width, height: cg.height, eyeAspectRatio: ear, mouthOpenRatio: mouthOpen,
+                                 captureQualityScore: qualityScore, personCoverage: coverage)
     }
 
     /// 얼굴 상자 평균 밝기 (0…1, sRGB 평균).
@@ -234,7 +255,8 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         status = PhotoFrameStatus(isTracked: true, yaw: a.pose.x, pitch: a.pose.y, roll: a.pose.z, visionYaw: a.visionYawPitch.x, visionPitch: a.visionYawPitch.y,
                                   brightness: b, faceWidthRatio: Float(a.box.width) / Float(max(1, image.width)), landmarkCount: a.points.count,
                                   imageWidth: image.width, imageHeight: image.height, confidence: a.confidence,
-                                  eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio)
+                                  eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio,
+                                  captureQualityScore: a.captureQualityScore, personCoverage: a.personCoverage)
     }
 
     // MARK: 촬영
@@ -316,6 +338,9 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         if kind == .eyesClosed, status.eyeAspectRatio > gate.eyesClosedMaxAspect { return (false, "눈을 감아 주세요") }
         if kind == .mouthOpen, status.mouthOpenRatio < gate.mouthOpenMinRatio { return (false, "입을 더 벌려 주세요") }
         if !gate.brightnessRange.contains(status.brightness) { return (false, status.brightness < gate.brightnessRange.lowerBound ? "조금 더 밝은 곳으로" : "너무 밝습니다") }
+        // T-302: 캡처 품질 점수·인물 매트.
+        if status.captureQualityScore < gate.minCaptureQuality { return (false, "조금 더 선명하게, 정면에서 찍어 주세요") }
+        if status.personCoverage < gate.minPersonCoverage { return (false, "얼굴이 배경과 잘 구분되지 않습니다") }
         return (true, "유지하세요")
     }
 

@@ -19,8 +19,10 @@ public struct PhotoSuitabilityReport: Sendable, Equatable {
 
 public enum PhotoSuitability {
     /// 순수 평가 — Vision 분석 결과를 이미 가지고 있을 때(혹은 테스트에서 합성 값으로) 쓴다.
+    /// `captureQualityScore`·`personCoverage`(T-302) 는 기본값 1(측정 안 함 = 막을 이유 없음) — 기존 호출부를 안 건드린다.
     public static func evaluate(yaw: Float, pitch: Float, eyeAspectRatio: Float, mouthOpenRatio: Float,
-                                brightness: Float, faceWidthRatio: Float, gate: PhotoCaptureGate = PhotoCaptureGate()) -> PhotoSuitabilityReport {
+                                brightness: Float, faceWidthRatio: Float, captureQualityScore: Float = 1, personCoverage: Float = 1,
+                                gate: PhotoCaptureGate = PhotoCaptureGate()) -> PhotoSuitabilityReport {
         var reasons: [String] = []
         if abs(yaw) > gate.yawTolerance { reasons.append("정면을 보고 다시 찍어 주세요") }
         if abs(pitch) > gate.pitchTolerance { reasons.append("고개를 너무 들거나 숙이지 마세요") }
@@ -30,6 +32,8 @@ public enum PhotoSuitability {
             reasons.append(brightness < gate.brightnessRange.lowerBound ? "더 밝은 곳에서 찍어 주세요" : "너무 밝습니다 — 역광을 피하세요")
         }
         if faceWidthRatio < gate.minFaceWidthRatio { reasons.append("얼굴이 너무 작습니다 — 더 가까이서 찍어 주세요") }
+        if captureQualityScore < gate.minCaptureQuality { reasons.append("조금 더 선명하게, 정면에서 찍어 주세요") }
+        if personCoverage < gate.minPersonCoverage { reasons.append("얼굴이 배경과 잘 구분되지 않습니다") }
         return PhotoSuitabilityReport(isSuitable: reasons.isEmpty, reasons: reasons)
     }
 
@@ -40,7 +44,8 @@ public enum PhotoSuitability {
         let brightness = PhotoCaptureSession.brightness(image, in: a.box)
         let faceWidthRatio = Float(a.box.width) / Float(max(1, image.width))
         return evaluate(yaw: a.pose.x, pitch: a.pose.y, eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio,
-                        brightness: brightness, faceWidthRatio: faceWidthRatio, gate: gate)
+                        brightness: brightness, faceWidthRatio: faceWidthRatio, captureQualityScore: a.captureQualityScore,
+                        personCoverage: a.personCoverage, gate: gate)
     }
 #endif
 }

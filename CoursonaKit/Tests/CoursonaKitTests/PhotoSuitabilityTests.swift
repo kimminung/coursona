@@ -55,4 +55,24 @@ struct PhotoSuitabilityTests {
         let r = PhotoSuitability.evaluate(yaw: 25, pitch: 0, eyeAspectRatio: 0.05, mouthOpenRatio: 0.05, brightness: 0.5, faceWidthRatio: 0.3, gate: Self.goodGate)
         #expect(r.reasons.count == 2)
     }
+
+    @Test("캡처 품질 점수가 낮으면 부적합(T-302)")
+    func lowCaptureQuality() {
+        let r = PhotoSuitability.evaluate(yaw: 0, pitch: 0, eyeAspectRatio: 0.3, mouthOpenRatio: 0.05, brightness: 0.5, faceWidthRatio: 0.3,
+                                          captureQualityScore: 0.2, gate: Self.goodGate)
+        #expect(!r.isSuitable && r.reasons.contains("조금 더 선명하게, 정면에서 찍어 주세요"))
+    }
+
+    @Test("인물 매트 비율이 낮으면 부적합(T-302)")
+    func lowPersonCoverage() {
+        let r = PhotoSuitability.evaluate(yaw: 0, pitch: 0, eyeAspectRatio: 0.3, mouthOpenRatio: 0.05, brightness: 0.5, faceWidthRatio: 0.3,
+                                          personCoverage: 0.3, gate: Self.goodGate)
+        #expect(!r.isSuitable && r.reasons.contains("얼굴이 배경과 잘 구분되지 않습니다"))
+    }
+
+    @Test("T-302 값을 안 주면 기본값 1 이라 기존 호출부처럼 막지 않는다")
+    func defaultsDoNotBlock() {
+        let r = PhotoSuitability.evaluate(yaw: 0, pitch: 0, eyeAspectRatio: 0.3, mouthOpenRatio: 0.05, brightness: 0.5, faceWidthRatio: 0.3, gate: Self.goodGate)
+        #expect(r.isSuitable)
+    }
 }
