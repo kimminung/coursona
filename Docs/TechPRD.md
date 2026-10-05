@@ -257,7 +257,7 @@ M6 이후 F2 → F3 → F5 → F6 → F8 → F9 공통(F4 는 M5 가 대신, F7 
 
 - `BustEntity`: 파트 `[faceSkin, eyeCapL, eyeCapR, mouthCap, ghost?]`, 머티리얼 각각(`PhysicallyBasedMaterial`, 피부 roughness 0.55; 눈 캡 roughness 0.15 + clearcoat 0.6 으로 촉촉함; 입 캡 roughness 0.7). `LowLevelDeformation` 블렌딩은 전체 정점.
 - **스플랫 자식(T-504b)**: `applySplats(...)` 호출 시 `root` 아래 `"BustSplats"` 자식 엔티티에 `GaussianSplatComponent` 를 붙인다(§6.6, Mac OS 27+ Apple7 GPU 만). 성공하면 `ghost` 가 자동으로 꺼지고, 미지원이면 `ghost` 로 되돌아간다 — 둘이 동시에 보이지 않는다.
-- **시선**: 눈 캡 머티리얼의 `textureCoordinateTransform.offset` 을 `eyeLook{In,Out,Up,Down}_{L,R}` 가중치로 이동(최대 ±0.08 UV ≈ 홍채 반지름의 절반). 기하는 움직이지 않으므로 뚫림이 없다. 자동 시선 미세 움직임(초상 FaceRig)은 같은 경로.
+- **시선(T-604, 구현 완료 2026-10-06)**: 눈 캡 머티리얼의 `textureCoordinateTransform.offset` 을 `eyeLook{In,Out,Up,Down}_{L,R}` 가중치로 이동(최대 ±0.08 UV ≈ 홍채 반지름의 절반). 기하는 움직이지 않으므로 뚫림이 없다. 자동 시선 미세 움직임(초상 FaceRig)은 같은 경로. `FaceSurfacePartitioner` 가 캡 삼각형 구간(`capRanges`)을 따로 알려줘서 `BustEntity` 가 눈·입 캡을 전용 머티리얼로 떼어낼 수 있게 했고, `FaceRigSystem` 은 최종 eyeLook 가중치에서 직접 시선 벡터를 뽑아 `BustEntity.applyGaze(_:)` 로 넘긴다. 이 Mac 에서 `RunCodeSnippet` 으로 머티리얼 3개 분리·UV 오프셋 적용까지 실제로 확인함(합성 구멍 템플릿 기준 — 실제 블렌더 템플릿·실기기 확인은 남음).
 - **깜빡임·눈꺼풀**: 패치는 템플릿/사용자 델타, 띠는 F8 의 c 기준 회전 델타. 눈 캡 정점의 델타 = 0.
 - **입**: 입술 패치·띠는 셰이프, 입 캡 포켓은 LipInner 평균 변위를 따라간다(F8). `jawOpen` 에 따라 포켓 바닥이 아래로 열린다.
 - `Identity` v3: `regionDeltas[shape] = [(vertexIndex, Δ)]`(띠·캡), `caps: { eyeL, eyeR, mouth }`(정점·인덱스·UV, 캡은 템플릿 밖 정점이므로 Identity 가 소유). identity.bin v1·v2 읽기 호환, v3 블록 추가. `runtimeDeltas` 가 패치 → regionDeltas → 나머지 ×s 순으로 덮어쓴다.

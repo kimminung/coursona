@@ -106,4 +106,20 @@ struct FaceSurfaceTests {
         let faceSet: Set<UInt32> = [0, 1, 3, 4]
         for i in 0..<partition.faceIndexCount { #expect(faceSet.contains(partition.indices[i])) }
     }
+
+    @Test("FaceSurfacePartitioner: capIndexRanges 를 주면 재배열 뒤 캡 삼각형 구간을 같은 순서·내용으로 돌려준다(C6, T-604)")
+    func capRangesAreRemappedCorrectly() throws {
+        let template = Self.makeHoleyTemplate(n: 9, spacing: 0.01, holeAt: (3, 3))
+        let capped = CapBuilder.addingCaps(to: template)
+        let cap = try #require(capped.eyeLeft)
+        let partition = FaceSurfacePartitioner.partition(template: capped.template, additionalFaceVertexIDs: capped.addedVertexIDs,
+                                                         capIndexRanges: capped.caps.map(\.triangleIndexRange))
+        #expect(partition.capRanges.count == 1)
+        let mapped = partition.capRanges[0]
+        #expect(mapped.count == cap.triangleIndexRange.count)
+        // 얼굴면 블록 안쪽에 있어야 한다(나머지 블록으로 새지 않는다).
+        #expect(mapped.upperBound <= partition.faceIndexCount)
+        // 캡 삼각형들의 상대 순서·내용은 재배열 전과 똑같다 — 다른 얼굴면 삼각형이 앞에 끼어들 뿐.
+        #expect(Array(partition.indices[mapped]) == Array(capped.template.indices[cap.triangleIndexRange]))
+    }
 }

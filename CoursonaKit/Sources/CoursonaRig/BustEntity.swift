@@ -57,6 +57,11 @@ public final class BustEntity {
     /// `applySplats` 가 붙인 스플랫 엔티티(성공 시에만 존재) — §6.6 "스플랫: 폴백" UI 판단은 `splatsActive` 로.
     private var splatEntity: Entity?
     public private(set) var splatsActive = false
+    /// 눈 캡 전용 머티리얼 인덱스(T-604, 있을 때만) — `applyGaze` 가 UV 오프셋을 넣을 자리.
+    private var eyeCapMaterialIndexLeft: Int?
+    private var eyeCapMaterialIndexRight: Int?
+    /// 시선 UV 오프셋 한계(§6.7 — 홍채 반지름의 절반 근처).
+    private let eyeGazeMaxUVOffset: Float = 0.08
 
     public init(template rawTemplate: BustTemplate, identity: Identity? = nil, material: Material? = nil, preferGPU: Bool = true, enableFaceCaps: Bool = true) throws {
         var id = identity ?? Identity.fromTemplate(rawTemplate)
@@ -82,8 +87,10 @@ public final class BustEntity {
         }
         self.identity = id
 
-        // T-101: 얼굴면(패치+띠+캡)이 앞쪽에 오도록 인덱스를 재배열 — 렌더 파트 2개로 나뉘는 경계가 된다.
-        let partition = FaceSurfacePartitioner.partition(template: template, additionalFaceVertexIDs: capped.addedVertexIDs)
+        // T-101: 얼굴면(패치+띠+캡)이 앞쪽에 오도록 인덱스를 재배열. T-604: 캡별 구간도 같이 받아서
+        // 눈·입 캡을 얼굴 피부와 다른 머티리얼(파트)로 떼어낼 수 있게 한다.
+        let capIndexRanges = capped.caps.map(\.triangleIndexRange)
+        let partition = FaceSurfacePartitioner.partition(template: template, additionalFaceVertexIDs: capped.addedVertexIDs, capIndexRanges: capIndexRanges)
         self.faceSurface = partition
         var partitionedTemplate = template
         partitionedTemplate.indices = partition.indices
@@ -140,14 +147,6 @@ public final class BustEntity {
             return BoundingBox(min: lo - SIMD3(repeating: 0.03), max: hi + SIMD3(repeating: 0.03))
         }
         let faceIndexCount = partition.faceIndexCount, restIndexCount = partition.restIndexCount
-        llm.parts.replaceAll([
-            LowLevelMesh.Part(indexOffset: 0, indexCount: faceIndexCount, topology: .triangle, materialIndex: 0,
-                              bounds: bounds(of: 0..<faceIndexCount)),
-            LowLevelMesh.Part(indexOffset: faceIndexCount * MemoryLayout<UInt32>.size, indexCount: restIndexCount, topology: .triangle, materialIndex: 1,
-                              bounds: bounds(of: faceIndexCount..<(faceIndexCount + restIndexCount))),
-        ])
-
-        let resource = try MeshResource(from: llm)
         var skin: Material = material ?? {
             var m = PhysicallyBasedMaterial()
             m.baseColor = .init(tint: .init(red: 0.86, green: 0.68, blue: 0.58, alpha: 1))
@@ -156,6 +155,47 @@ public final class BustEntity {
             return m
         }()
         if var pbr = skin as? PhysicallyBasedMaterial { pbr.faceCulling = .back; skin = pbr }
+
+        // T-604: 얼굴 피부(0) 다음에, 있는 캡만(눈 왼쪽·오른쪽·입 순서 — `partition.capRanges` 와 같은 순서)
+        // 전용 머티리얼·파트로 떼어낸다. 캡 UV 자체는 바뀌지 않고(텍스처는 TextureBuilder 가 그대로 투영),
+        // 눈은 더 매끈하게(clearcoat)·입은 조금 덜 매끈하게 — §6.7.
+        func capMaterial(roughnessValue: Float, clearcoatValue: Float) -> Material {
+            var m: Material = skin
+            if var pbr = m as? PhysicallyBasedMaterial {
+                pbr.roughness = .init(floatLiteral: roughnessValue)
+                pbr.clearcoat = .init(floatLiteral: clearcoatValue)
+                pbr.faceCulling = .back
+                m = pbr
+            }
+            return m
+        }
+        var materials: [Material] = [skin]
+        var parts: [LowLevelMesh.Part] = []
+        let totalCapIndexCount = partition.capRanges.reduce(0) { $0 + $1.count }
+        let nonCapFaceCount = faceIndexCount - totalCapIndexCount
+        parts.append(LowLevelMesh.Part(indexOffset: 0, indexCount: nonCapFaceCount, topology: .triangle, materialIndex: 0,
+                                       bounds: bounds(of: 0..<nonCapFaceCount)))
+        var capRangeIdx = 0
+        if capped.eyeLeft != nil {
+            let r = partition.capRanges[capRangeIdx]; capRangeIdx += 1
+            materials.append(capMaterial(roughnessValue: 0.15, clearcoatValue: 0.6))
+            eyeCapMaterialIndexLeft = materials.count - 1
+            parts.append(LowLevelMesh.Part(indexOffset: r.lowerBound * MemoryLayout<UInt32>.size, indexCount: r.count, topology: .triangle,
+                                           materialIndex: materials.count - 1, bounds: bounds(of: r)))
+        }
+        if capped.eyeRight != nil {
+            let r = partition.capRanges[capRangeIdx]; capRangeIdx += 1
+            materials.append(capMaterial(roughnessValue: 0.15, clearcoatValue: 0.6))
+            eyeCapMaterialIndexRight = materials.count - 1
+            parts.append(LowLevelMesh.Part(indexOffset: r.lowerBound * MemoryLayout<UInt32>.size, indexCount: r.count, topology: .triangle,
+                                           materialIndex: materials.count - 1, bounds: bounds(of: r)))
+        }
+        if capped.mouth != nil {
+            let r = partition.capRanges[capRangeIdx]; capRangeIdx += 1
+            materials.append(capMaterial(roughnessValue: 0.7, clearcoatValue: 0))
+            parts.append(LowLevelMesh.Part(indexOffset: r.lowerBound * MemoryLayout<UInt32>.size, indexCount: r.count, topology: .triangle,
+                                           materialIndex: materials.count - 1, bounds: bounds(of: r)))
+        }
         // 얼굴면 밖(머리·목·어깨): 기본은 완전히 뺀다(opacity 0) — "투명 = 파트 제외"(TechPRD §3).
         // `setGhostVisible(true)` 로 디버그·시뮬레이터 폴백용 옅은 고스트(0.15)를 켤 수 있다.
         var ghost = PhysicallyBasedMaterial()
@@ -165,7 +205,13 @@ public final class BustEntity {
         ghost.blending = .transparent(opacity: .init(floatLiteral: 0))
         ghost.faceCulling = .back
         ghostMaterial = ghost
-        model = ModelEntity(mesh: resource, materials: [skin, ghost])
+        materials.append(ghost)
+        parts.append(LowLevelMesh.Part(indexOffset: faceIndexCount * MemoryLayout<UInt32>.size, indexCount: restIndexCount, topology: .triangle,
+                                       materialIndex: materials.count - 1, bounds: bounds(of: faceIndexCount..<(faceIndexCount + restIndexCount))))
+        llm.parts.replaceAll(parts)
+
+        let resource = try MeshResource(from: llm)
+        model = ModelEntity(mesh: resource, materials: materials)
         model.name = "Bust"
         root = Entity()
         root.name = "BustRoot"
@@ -256,8 +302,22 @@ public final class BustEntity {
         guard isGhostVisible != visible else { return }
         isGhostVisible = visible
         ghostMaterial.blending = .transparent(opacity: .init(floatLiteral: visible ? 0.15 : 0))
+        guard var mc = model.components[ModelComponent.self], !mc.materials.isEmpty else { return }
+        // 고스트는 항상 마지막 머티리얼 슬롯(T-604: 눈·입 캡이 끼어들어도 순서는 그대로 유지된다).
+        mc.materials[mc.materials.count - 1] = ghostMaterial
+        model.components[ModelComponent.self] = mc
+    }
+
+    /// T-604: 시선을 눈 캡 머티리얼의 UV 오프셋으로 표현한다(기하는 그대로라 뚫림이 없다, §6.7).
+    /// `gaze` 는 대략 -1...1(피사체 기준 오른쪽·아래가 양수) — 내부에서 ±0.08 UV 로 스케일한다.
+    /// 눈 캡이 없는 템플릿(구멍 없는 합성 템플릿 등)에서는 조용히 아무 일도 하지 않는다.
+    public func applyGaze(_ gaze: SIMD2<Float>) {
+        guard eyeCapMaterialIndexLeft != nil || eyeCapMaterialIndexRight != nil else { return }
         guard var mc = model.components[ModelComponent.self] else { return }
-        mc.materials = [mc.materials.first ?? ghostMaterial, ghostMaterial]
+        let offset = simd_clamp(gaze, SIMD2(repeating: -1), SIMD2(repeating: 1)) * eyeGazeMaxUVOffset
+        let transform = PhysicallyBasedMaterial.TextureCoordinateTransform(offset: offset, scale: SIMD2(repeating: 1), rotation: 0)
+        if let i = eyeCapMaterialIndexLeft, var pbr = mc.materials[i] as? PhysicallyBasedMaterial { pbr.textureCoordinateTransform = transform; mc.materials[i] = pbr }
+        if let i = eyeCapMaterialIndexRight, var pbr = mc.materials[i] as? PhysicallyBasedMaterial { pbr.textureCoordinateTransform = transform; mc.materials[i] = pbr }
         model.components[ModelComponent.self] = mc
     }
 

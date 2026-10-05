@@ -209,6 +209,9 @@ public struct FaceRigSystem: System {
 
             if let bust {
                 bust.update(weights: rig.lastWeights)
+                // T-604: 시선은 (라이브든 합성이든) 최종 가중치의 eyeLook 8방향에서 바로 뽑아 눈 캡 UV 로 보낸다 —
+                // `rig.gaze`(아래 레거시 경로의 각도 상태)와 달리 라이브 입력일 때도 그대로 맞는다.
+                bust.applyGaze(FaceRigSystem.gazeFromWeights(rig.lastWeights))
             } else {
                 var target = ShapeNameAdapter.resolve(rig.lastWeights, legacyVisemes: legacyVisemes, names: rig.shapeNames)
                 target = target.mapValues { min(1, $0) }
@@ -278,6 +281,14 @@ public struct FaceRigSystem: System {
             guard isEye(e), !isEye(e.parent) else { return }
             e.orientation = simd_quatf(angle: g.x, axis: [0, 1, 0]) * simd_quatf(angle: -g.y, axis: [1, 0, 0])
         }
+    }
+
+    /// T-604: 최종(라이브든 합성이든) eyeLook 8방향 가중치 → 대략 -1...1 시선 벡터(오른쪽·아래가 양수).
+    /// `BustEntity.applyGaze` 가 쓰는 단위 — 위 `applyGaze(_:to:)`(레거시 각도, `rig.gaze` 전용)와는 다르다.
+    static func gazeFromWeights(_ w: ArkitWeights) -> SIMD2<Float> {
+        let x = ((w[.eyeLookOutLeft] + w[.eyeLookInRight]) - (w[.eyeLookInLeft] + w[.eyeLookOutRight])) / 2
+        let y = ((w[.eyeLookDownLeft] + w[.eyeLookDownRight]) - (w[.eyeLookUpLeft] + w[.eyeLookUpRight])) / 2
+        return SIMD2(x, y)
     }
 }
 
