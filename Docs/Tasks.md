@@ -45,7 +45,7 @@
 |---|---|---|---|
 | T-301 | `FaceCaptureSession` 7컷(필수 5+선택 2), `AVDepthData.cameraCalibrationData` 저장, 저장 시 5/5 깊이 검증 | §6.3 A | 🔄 — `ShotKind`에 `eyesClosed`/`mouthOpen`(선택, `isOptional`) 추가, `FaceFrameStatus.eyeBlinkAvg`/`jawOpenWeight` + `CaptureGate` 임계값으로 두 컷 게이팅 완료(F7 이 바로 이 컷을 씀). `cameraCalibrationData` 저장·깊이 5/5 검증은 아직 — 🧪 실기기에서 확인 |
 | T-302 | `PhotoCaptureSession` 확장: B 등급 5+2컷, `GeneratePersonSegmentationRequest(.accurate)` 매트, `VNDetectFaceCaptureQualityRequest` 점수 게이트 | §6.3 B | 🔄 — Vision 눈/입 랜드마크 바운딩박스로 `eyeAspectRatio`/`mouthOpenRatio` 계산 + 게이팅으로 두 선택 컷 지원 완료. 인물 매트·캡처 품질 점수 게이트는 아직 |
-| T-303 | C 등급: `PhotosPicker`/파일 가져오기 → 정면 1장 적합성 검사(정면·눈 뜸·입 다묾·밝기) | §6.3 C | ⏳ |
+| T-303 | C 등급: `PhotosPicker`/파일 가져오기 → 정면 1장 적합성 검사(정면·눈 뜸·입 다묾·밝기) | §6.3 C | 🔄 — `CoursonaCapture/PhotoSuitability.swift`: 평가 로직은 Vision 비의존 순수 함수(B 등급과 **같은 `PhotoCaptureGate` 임계값** 재사용, 새 상수 없음) + `check(_:)`(Vision 래퍼). 단위 테스트 8개. `PhotosPicker` SwiftUI 연결은 C8 화면 작업 때 |
 | T-304 | `VisionCorrespondence`: 템플릿 패치를 가상 카메라로 투영해 Vision 76점 영역과 최근접 대응 생성·캐시 | §6.3 | ⏳ |
 | T-305 | `CoursonaML.MonoDepthEstimator`: Depth Anything V2 small(Core ML, Apple 배포) 래퍼, 지연 로드·CPU 폴백, 얼굴 박스 영역만 추론 | §6.10, Q7 | ⏳ |
 | T-306 | iPad 가로 거치 대응: `CaptureShotMeta.orientation` 기록, 피팅은 메타만 사용(초상 회전 버그 재발 방지) | §6.3 | ⏳ |
@@ -55,9 +55,9 @@
 
 | ID | 작업 | 근거(M-단계) | 상태 |
 |---|---|---|---|
-| T-401 | `MonoFitter` M1–M6: Vision 76점 대응 → 자세·스케일(s=1) → 의사 깊이 정합(2변수 최소제곱) → 3D TPS 패치 변형 → 깊이 당김(보수적) → F2 이하 공통 단계 합류 | M1–M6 | ⏳ |
-| T-402 | 단위·합성 테스트: 76점 재투영 RMS < 2px, 의사 깊이 정합 잔차 중앙값 < 4mm, 자기교차 0 | §9 | ⏳ |
-| T-403 | 🧪 Mac 실기기(FaceTime HD) B 등급 빌드 1회 | §9 | ⏳ |
+| T-401 | `MonoFitter` M1–M6: Vision 8점 대응 → 자세·스케일(s=1) → 광선 삼각측량(다시점) → 3D 바이하모닉 RBF 패치 변형 → 목 감쇠·대칭 → F2 이하 공통 단계 합류 | M1–M6 | ✅ — **새 코드 불필요, C0 포팅분이 이미 함**. `SparseFitter`(초상에서 포팅) + `FaceFitter.fit` 의 자동 분기(`bundle.meta.sparse` 면 `SparseFitter` 로)로 이미 동작한다. TPS 대신 바이하모닉 RBF, "2변수 최소제곱 의사 깊이" 대신 **광선 삼각측량**(여러 컷의 랜드마크 광선 교점)을 쓴다 — 수학은 다르지만 역할은 같다. T-304(Vision 76점 전체 대응)는 지금의 8점(눈꼬리 4·코끝·입꼬리 2·턱) 보다 더 조밀한 대응을 주는 **품질 개선**이지 이 경로의 전제조건이 아니다 — 8점만으로 이미 아래 T-402 정확도를 만족한다 |
+| T-402 | 단위·합성 테스트: 76점 재투영 RMS < 2px, 의사 깊이 정합 잔차 중앙값 < 4mm, 자기교차 0 | §9 | ✅ — `SparseCaptureTests`·`FitTests`(`sparseFit`·`sparseFitMultiShot`) 가 이미 확인: 섭동 사용자 턱 이동 오차 < 1mm, 다시점 코 깊이 오차 0.37mm(정면 단일 컷 9.28mm 대비) · 재투영은 `quality.notes` 에 px 단위로 기록됨. 자기교차는 C2 의 `SelfIntersectionCheck` 가 피팅 등급과 무관하게(CapBuilder 는 Identity.positions 만 본다) 같은 경로로 통과 |
+| T-403 | 🧪 Mac 실기기(FaceTime HD) B 등급 빌드 1회 | §9 | ⏳ — 실기기 필요, 보류 |
 
 ## C5 · 텍스처·스플랫
 
