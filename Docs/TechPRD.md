@@ -137,6 +137,16 @@ F10 DeltaCalibrator    jawOpen 진폭(미소 컷) — F7 이 치환했으면 생
 - **F5** 는 블렌더 `eye_band`(1열 r−0.2 mm, 2열 (P−c)+(0,6 mm,0) 방향 r−1.5 mm)·`mouth_band`(위아래 2.8/6.8 mm, 앞뒤 ±1.2/±3.2 mm, 꼬리 수축 4 %/10 %)를 Swift 로 재현, 모든 mm 상수에 s 를 곱한다. 템플릿을 넣으면 bust.mesh 와 0.0 mm 일치(테스트). LidInner·LipInner 인덱스 ↔ 루프 순서는 로드 시 최근접(0.5 mm 임계)으로 추론·캐시(`InnerBandIndexMap`).
 - **F9** 가 v0.1 의 관통 검사를 대체한다. 분리 물체가 없으므로 검사 대상은 **자기교차**뿐: 각 포즈에서 (a) LidInner 2열과 눈 캡 링의 부호 거리(캡 구면 기준) ≥ 0 (b) 입 캡 포켓 벽과 LipInner (c) 윗입술 안쪽 띠와 아랫입술 안쪽 띠(`mouthClose`·`mouthPress` 1.0 에서 겹침 ≤ 0.3 mm 허용) (d) 윗눈꺼풀 띠와 아랫눈꺼풀 띠(`eyeBlink` 1.0 에서 ≤ 0.3 mm). 위반 시 F5 의 띠 깊이 상수를 0.5 mm 씩 조정해 최대 3회 재시도, 남으면 `quality.selfIntersections` 기록 + 경고 배지.
 
+> **구현 노트(C2, 2026-10-06)** — C1 의 `CapBuilder`(위상으로 테두리를 직접 찾는 방식)를 그대로 쓰면서 F2·F5·F6·F7·F8·F9 의 범위가 위 서술보다 훨씬 줄었다.
+> - **F2**: 새 코드가 필요 없다. 초상에서 포팅한 `FacePatchSolver.estimateEyes` 가 이미 같은 사전값+구 피팅을 한다. 눈 감기 컷으로 보강하는 부분만 C3 이후(그 컷 자체가 캡처 경로에 아직 없다).
+> - **F5(InnerBandBuilder)는 통째로 불필요해졌다.** LidInner·LipInner 는 C1 에서 전혀 건드리지 않는다(기존 위치·삼각형 그대로 둔다) — "안쪽 2열이 LidInner 의 몇 번째 인덱스인지" 추론할 필요가 `CapBuilder` 설계 단계에서부터 없었다. `InnerBandIndexMap` 은 만들지 않는다.
+> - **F6(v1, 피팅 좌표로 다시 닫기)도 새 코드가 없다.** `BustEntity.init` 이 `identity.positions`(정점 수가 템플릿과 같으면, 즉 진짜 피팅 결과면) 를 템플릿에 대입한 뒤 **C1 과 똑같은** `CapBuilder.addingCaps` 를 다시 부른다. 템플릿 좌표(v0)와 피팅 좌표(v1)가 함수 레벨에서 구분되지 않는다.
+> - **F8(RegionDeltaBuilder)** 은 "피팅된 눈알 중심 기준 회전" 대신 더 단순하게: 캡이 새로 만든 정점(중간 고리·중심)에 **그 캡이 붙은 테두리(기존 정점)의 평균 델타**를 준다. `CapBuilder.addingCaps` 안에서 셰이프마다 수행하고, `shapeDeltas` 확장은 예전의 "0 으로 채운다"를 대체한다.
+> - **F9**는 진짜 삼각형-삼각형 교차 대신 **법선 뒤집힘 근사**로 구현했다(`SelfIntersectionCheck`): 중립 자세의 캡 삼각형 법선과 셰이프 1.0 자세의 같은 삼각형 법선이 반대를 향하면(내적 < 0) "뒤집힘" 으로 센다. 4종 분류·재시도 로직은 v1 에서 빠졌다 — 뒤집힘이 나오면 0.0.1 절 F5/F6 쪽에서 더 손볼 지점을 알려 주는 진단으로만 쓴다.
+> - **identity.bin v3·`caps.json` 은 필요 없어졌다.** 캡 기하와 F8 델타는 (템플릿, 피팅된 `Identity.positions`) 만으로 로드할 때마다 결정적으로 다시 계산된다 — 저장할 사용자별 데이터가 없다. identity.bin 은 v2 그대로 쓴다(§6.9 의 "v3" 서술은 더 이상 유효하지 않다 — 패키지 포맷은 C7 에서 재확인한다).
+> - **F7(UserShapeDeltas)은 그대로 C3 이후로 차단**이다 — 눈 감기·입 벌림 컷이 캡처 경로(`ShotKind`)에 없다.
+> 구현: `CoursonaFit/SilhouetteFitter.swift`(F4: `excludeEyeMouthRegion`), `CoursonaFace/CapBuilder.swift`(F6·F8 합침), `CoursonaFace/SelfIntersectionCheck.swift`(F9), `CoursonaRig/BustEntity.swift`(피팅 좌표 대입).
+
 #### 단안 경로 (B·C 등급) — `MonoFitter`
 
 ```

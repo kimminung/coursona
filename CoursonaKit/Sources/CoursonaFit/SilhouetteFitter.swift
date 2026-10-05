@@ -58,6 +58,13 @@ public struct SilhouetteOptions: Sendable, Equatable {
     public var normalBaseline: Float = 0.004
     /// 컷마다 깊이를 ARKit 메시에 정합(상수 오프셋, `DepthRegistration`). 실기기 깊이는 메시보다 ~25 mm 가까웠다.
     public var registerDepthToMesh = true
+    /// F4(TechPRD §6.4): 눈·입 안쪽(LidInner·LipInner)은 당기지 않는다 — 그 구멍의 깊이점(눈알·치아·혀)은
+    /// 패치와 다른 면이라 당겨지면 안쪽이 뚫리거나 눌린다. 그 구멍 근처 깊이점도 포인트 클라우드에서 뺀다.
+    public var excludeEyeMouthRegion = true
+    /// 눈 중심에서 이 배수(×눈 반지름) 안의 깊이점은 버린다(최소 20 mm) — 눈알·속눈썹 깊이점 제거.
+    public var eyeExclusionRadiusScale: Float = 1.8
+    /// 입 중심에서 이 반경(m) 안의 깊이점은 버린다 — 치아·혀 깊이점 제거.
+    public var mouthExclusionRadius: Float = 0.025
     public init() {}
 }
 
@@ -80,6 +87,38 @@ public struct SilhouetteResult: Sendable, Equatable {
 }
 
 public enum SilhouetteFitter {
+    /// F4: 눈·입 중심 + 배제 반경(흉상 공간). 템플릿에 눈·입 정보가 없으면 빈 배열.
+    public static func exclusionCenters(_ t: BustTemplate, options o: SilhouetteOptions) -> [(center: SIMD3<Float>, radius: Float)] {
+        guard o.excludeEyeMouthRegion else { return [] }
+        var out: [(SIMD3<Float>, Float)] = []
+        let eyeR = max(t.manifest.eyeRadius, 0.008) * o.eyeExclusionRadiusScale
+        out.append((t.manifest.eyeCenterL, eyeR))
+        out.append((t.manifest.eyeCenterR, eyeR))
+        let mouthC: SIMD3<Float>? = t.manifest.mouthCenter.map { SIMD3($0[0], $0[1], $0[2]) }
+            ?? t.manifest.patchLoops["mouth"].map { loop in loop.reduce(SIMD3<Float>.zero) { $0 + t.positions[$1] } / Float(max(1, loop.count)) }
+        if let m = mouthC { out.append((m, o.mouthExclusionRadius)) }
+        return out
+    }
+
+    /// F4: 움직여도 되는 정점(패치·어깨 제외, LidInner·LipInner 도 제외) 전역 id 와 목 가중치.
+    public static func movableVertices(template t: BustTemplate, options fo: FitOptions) -> (globalOf: [Int], neckW: [Float]) {
+        let o = fo.silhouette
+        let shoulders = Set(t.manifest.group(.shoulders))
+        let neck = Set(t.manifest.group(.neck))
+        var eyeMouth = Set<Int>()
+        if o.excludeEyeMouthRegion {
+            eyeMouth.formUnion(t.manifest.group(.lidInner))
+            eyeMouth.formUnion(t.manifest.group(.lipInner))
+        }
+        var globalOf: [Int] = [], neckW: [Float] = []
+        for i in t.patchCount..<t.vertexCount where !shoulders.contains(i) && !eyeMouth.contains(i) {
+            let w = neck.contains(i) ? HeadPropagator.neckWeight(y: t.positions[i].y, options: fo) : 1
+            guard w > 0.02 else { continue }
+            globalOf.append(i); neckW.append(w)
+        }
+        return (globalOf, neckW)
+    }
+
     /// 포인트 클라우드 (흉상 공간) + 균일 격자.
     public struct Cloud: Sendable {
         public var points: [SIMD3<Float>] = []
@@ -127,6 +166,7 @@ public enum SilhouetteFitter {
                                   options o: SilhouetteOptions) -> Cloud {
         var cloud = Cloud()
         let shoulders = Set(t.manifest.group(.shoulders))
+        let exclusions = exclusionCenters(t, options: o) // F4: 눈알·치아 깊이점 제거
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
         for (i, p) in t.positions.enumerated() where !shoulders.contains(i) { lo = simd_min(lo, p); hi = simd_max(hi, p) }
         lo -= SIMD3(repeating: 0.03); hi += SIMD3(repeating: 0.03)
@@ -175,6 +215,7 @@ public enum SilhouetteFitter {
                     let pCam = Kd.unproject(SIMD2(Float(x) + 0.5, Float(y) + 0.5), depth: d)
                     let p = Geometry.transformPoint(M, pCam)
                     guard p.x >= lo.x, p.y >= lo.y, p.z >= lo.z, p.x <= hi.x, p.y <= hi.y, p.z <= hi.z else { continue }
+                    if exclusions.contains(where: { simd_length_squared(p - $0.center) < $0.radius * $0.radius }) { continue }
                     // 포인트 법선: 중심 차분 외적. 기준선은 **표면에서 약 4 mm**(TrueDepth 잡음 ~1 mm 라 1–2 px 기준선의 법선은 쓸 수 없다).
                     let footprint = d / max(1, Kd.fx)                      // m / px
                     let ns = min(8, max(stride, Int((o.normalBaseline / footprint).rounded())))
@@ -256,23 +297,14 @@ public enum SilhouetteFitter {
     static func fit(positions: inout [SIMD3<Float>], template t: BustTemplate, cloud: Cloud, options fo: FitOptions, start: Date) -> SilhouetteResult? {
         let o = fo.silhouette
         let V = t.vertexCount
-        let pc = t.patchCount
         guard positions.count == V else { return nil }
-        let shoulders = Set(t.manifest.group(.shoulders))
         let scalp = Set(t.manifest.group(.scalp))
         let neck = Set(t.manifest.group(.neck))
 
-        // 움직일 정점 (패치·어깨 제외, 목은 가중치 > 0.02)
+        // 움직일 정점 (패치·어깨·눈·입 안쪽 제외, 목은 가중치 > 0.02) — F4
+        let (globalOf, neckW) = movableVertices(template: t, options: fo)
         var local = [Int32](repeating: -1, count: V)
-        var globalOf: [Int] = []
-        var neckW: [Float] = []
-        for i in pc..<V where !shoulders.contains(i) {
-            let w = neck.contains(i) ? HeadPropagator.neckWeight(y: t.positions[i].y, options: fo) : 1
-            guard w > 0.02 else { continue }
-            local[i] = Int32(globalOf.count)
-            globalOf.append(i)
-            neckW.append(w)
-        }
+        for (i, g) in globalOf.enumerated() { local[g] = Int32(i) }
         let n = globalOf.count
         guard n > 0 else { return nil }
 

@@ -28,16 +28,16 @@
 
 | ID | 작업 | 근거(F-단계) | 상태 |
 |---|---|---|---|
-| T-201 | `EyeOpeningSolver`(F2): 눈 루프 사전값 + 눈 감기 컷 4변수 최소제곱 | F2 | ⏳ |
-| T-202 | `SilhouetteFitter` 제외 영역 수정(F4): 눈·입 루프 2-링, 루프 투영 안 깊이점 제외 | F4 | ⏳ |
-| T-203 | `InnerBandBuilder`(F5): LidInner 96·LipInner 72 재생성, s 배, 인덱스↔루프 순서 추론·캐시(`InnerBandIndexMap`, 0.5mm 임계) | F5 | ⏳ |
-| T-204 | `CapBuilder` v1(F6): 피팅값(눈알 중심·반지름, 입 루프 평균) 반영해 캡 재생성, `caps.json` 출력 | F6 | ⏳ |
-| T-205 | `UserShapeDeltas`(F7): 눈 감기·입 벌림 컷이 있으면 `eyeBlink_L/R`·`jawOpen` 패치 델타 치환 | F7 | ⏳ |
-| T-206 | `RegionDeltaBuilder`(F8): 띠·캡의 셰이프 델타를 피팅된 눈알 중심 기준으로 재계산 | F8 | ⏳ |
-| T-207 | `SelfIntersectionCheck`(F9): 4종 검사(눈 띠↔캡, 입 캡↔띠, 윗입술↔아랫입술, 위↔아래 눈꺼풀), 위반 시 띠 상수 0.5mm씩 최대 3회 재시도 | F9 | ⏳ |
-| T-208 | `Identity` → identity.bin **v3**(regionDeltas·caps), v1·v2 읽기 호환 유지 | §6.7 | ⏳ |
-| T-209 | `coursona-validate --fit`: 돌출 대신 **자기교차 지표**(개수·최대 깊이) 출력 | §6.9 | ⏳ |
-| T-210 | 🧪 합성 번들 자기교차 0, 실기기 A 번들(iPhone) 자기교차 0 | §9 | ⏳ |
+| T-201 | `EyeOpeningSolver`(F2) | F2 | ✅ — **새 코드 불필요**. `FacePatchSolver.estimateEyes`(C0 에서 이미 포팅됨)가 눈꺼풀 링 사전값+대수적 구 피팅으로 이미 이 일을 한다. 눈 감기 컷으로 보강하는 부분만 **C3 에서 추가**(그 컷 자체가 아직 캡처되지 않음) |
+| T-202 | `SilhouetteFitter` 제외 영역(F4): `SilhouetteOptions.excludeEyeMouthRegion`(기본 ON) — 움직일 정점에서 LidInner∪LipInner 제외(`movableVertices`), 포인트 클라우드에서 눈·입 중심 반경 안 깊이점 제외(`exclusionCenters`) | F4 | ✅ |
+| T-203 | ~~`InnerBandBuilder`(F5)~~ | F5 | ✅ — **불필요해짐**. LidInner·LipInner 는 C1 에서 건드리지 않는다(기존 위치·삼각형 그대로). "인덱스↔루프 순서 추론"(`InnerBandIndexMap`)은 설계 자체가 사라졌다 — §6.2 구현 노트 참고 |
+| T-204 | `CapBuilder` v1(F6): 피팅 좌표로 다시 닫기 | F6 | ✅ — **새 코드 없이 됨**. `BustEntity.init` 이 `identity.positions`(정점 수가 맞으면)를 템플릿에 대입한 뒤 **같은** `CapBuilder.addingCaps` 를 부른다. `caps.json` 은 **불필요**(무상태 재계산이라 저장할 게 없다) |
+| T-205 | `UserShapeDeltas`(F7) | F7 | ⏳ **차단** — 눈 감기·입 벌림 컷은 C3 에서 캡처 경로가 생겨야 쓸 수 있다(`ShotKind` 에 아직 `eyesClosed`/`mouthOpen` 없음). C3 이후 재개 |
+| T-206 | `RegionDeltaBuilder`(F8): 캡이 새로 만든 정점(중간 고리·중심)에 **붙어 있는 테두리의 평균 델타**를 준다 — `CapBuilder.addingCaps` 안에서 셰이프마다 수행 | F8 | ✅ |
+| T-207 | `SelfIntersectionCheck`(F9): 진짜 삼각형-삼각형 교차 대신 **법선 뒤집힘**으로 근사(캡 삼각형이 중립↔셰이프 1.0 사이에서 뒤집히면 겹침 의심) | F9 | ✅ — `CoursonaFace/SelfIntersectionCheck.swift`. 4종 분류(눈 띠↔캡 등)·재시도 로직은 v1 범위에서 뺐다(근사 검사라 재시도할 "상수"가 없다) |
+| T-208 | ~~`Identity` → identity.bin v3~~ | §6.7 | ✅ — **불필요해짐**. 캡·F8 델타는 (템플릿, 피팅된 positions) 만으로 로드 시 결정적으로 재계산된다 — 저장할 사용자별 데이터가 없다. identity.bin 은 v2 그대로 |
+| T-209 | `coursona-validate --fit`: 자기교차 지표 출력 | §6.9 | ✅ — 피팅 좌표로 캡을 다시 닫고 캡별 테두리 크기 + `SelfIntersectionCheck` 결과를 출력 |
+| T-210 | 🧪 합성 번들 자기교차 0, 실기기 A 번들(iPhone) 자기교차 0 | §9 | 🔄 — 단위 테스트(평면 격자 픽스처)로 F8 평균 델타·F9 뒤집힘 검출 확인(`FaceCompletionTests`, 4개 전부 통과). 실제 템플릿·실기기 번들 확인은 🧪 보류(실기기 없음) |
 
 ## C3 · 캡처 A/B/C
 

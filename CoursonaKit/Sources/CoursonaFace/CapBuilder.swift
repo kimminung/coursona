@@ -2,7 +2,7 @@
 //  CapBuilder.swift
 //  CoursonaFace
 //
-//  눈·입 구멍 닫기 (TechPRD §6.2·§6.4 F6, Tasks T-102, v0 — 템플릿 좌표).
+//  눈·입 구멍 닫기 (TechPRD §6.2·§6.4 F5·F6·F8, Tasks T-102·T-203·T-204·T-206).
 //  초상은 눈알·입안을 분리 엔티티로 띄워서 피팅 뒤 어긋나거나 뚫렸다 — 코르소나는 그 대신
 //  **같은 메시 안에서 구멍을 막는다**.
 //
@@ -11,7 +11,11 @@
 //  그 구멍 뒤에 있던 자리). 이 열린 테두리를 **위상(경계 변)으로 직접 찾아** — 어떤 정점이 "안쪽 2열"인지
 //  블렌더 내부 순서를 추측하지 않고 — 중간 고리 1개 + 중심 1개로 닫는다.
 //
-//  v0(여기)는 템플릿 좌표 그대로 닫는다. 피팅된 좌표로 다시 닫는 v1·실제 셰이프 델타 재생성은 C2(F5·F8)다.
+//  v0(C1)는 템플릿 좌표 그대로 닫았다. v1(C2, F5·F6)은 **피팅된 좌표**(`BustEntity` 가 넘기는
+//  `template.positions`)에 대해 **같은 함수를 그대로 다시 부른다** — 눈·입 구멍의 테두리를 위상으로
+//  찾는 방식이라 "LidInner 몇 번째가 안쪽 고리인지" 추론(InnerBandIndexMap)이 처음부터 필요 없었다.
+//  F8(셰이프 델타 재생성)은 새로 만든 중간 고리·중심 정점에, **그 캡이 붙은 테두리(기존 정점)의 평균
+//  델타**를 준다 — 눈을 감으면 테두리가 움직이는 만큼 캡도 같이 움직여 뜯어지지 않는다.
 //
 
 import Foundation
@@ -24,7 +28,16 @@ public struct CapClosure: Sendable, Equatable {
     public var ringSize: Int
     /// 새로 만든 삼각형 수(테두리→중간 고리 밴드 + 중간 고리→중심 팬).
     public var addedTriangles: Int
-    public init(ringSize: Int, addedTriangles: Int) { self.ringSize = ringSize; self.addedTriangles = addedTriangles }
+    /// 닫은 테두리를 이루는 **기존** 정점 id(재사용, 순서대로) — F8 평균 델타의 입력.
+    public var loopVertexIDs: [Int]
+    /// 이 캡이 새로 만든 정점 id(중간 고리 + 중심, 순서대로) — F8 평균 델타의 출력.
+    public var addedVertexIDs: [Int]
+    /// 이 캡의 삼각형이 최종 `indices` 배열에서 차지하는 구간(정점 id 3개 단위 — 바이트 아님).
+    public var triangleIndexRange: Range<Int>
+    public init(ringSize: Int, addedTriangles: Int, loopVertexIDs: [Int], addedVertexIDs: [Int], triangleIndexRange: Range<Int>) {
+        self.ringSize = ringSize; self.addedTriangles = addedTriangles
+        self.loopVertexIDs = loopVertexIDs; self.addedVertexIDs = addedVertexIDs; self.triangleIndexRange = triangleIndexRange
+    }
 }
 
 public struct CapBuildResult: Sendable {
@@ -37,6 +50,8 @@ public struct CapBuildResult: Sendable {
     public init(template: BustTemplate, eyeLeft: CapClosure?, eyeRight: CapClosure?, mouth: CapClosure?, addedVertexIDs: Set<Int>) {
         self.template = template; self.eyeLeft = eyeLeft; self.eyeRight = eyeRight; self.mouth = mouth; self.addedVertexIDs = addedVertexIDs
     }
+    /// 세 캡을 전부 모은 목록(편의용).
+    public var caps: [CapClosure] { [eyeLeft, eyeRight, mouth].compactMap { $0 } }
 }
 
 public enum CapBuilder {
@@ -48,12 +63,8 @@ public enum CapBuilder {
     static let mouthPocketDepth: Float = 0.006
     static let mouthPocketSpread: Float = 0.0015
 
-    public enum CapError: Error, LocalizedError {
-        case notApplicable
-        public var errorDescription: String? { "이 템플릿에는 닫을 구멍이 없습니다(합성 템플릿 등)" }
-    }
-
     /// 눈(좌·우)·입 구멍을 찾아 닫는다. 구멍이 없으면(합성 템플릿 등) 그 항목만 `nil`로 조용히 건너뛴다 — 전체가 막히지는 않는다.
+    /// `template.positions` 가 피팅된 좌표면 그 좌표로 닫는다(F5·F6 v1) — 호출 쪽에서 좌표만 바꿔 넣으면 된다.
     public static func addingCaps(to template: BustTemplate) -> CapBuildResult {
         var positions = template.positions
         var normals = template.normals
@@ -93,6 +104,7 @@ public enum CapBuilder {
         /// 발견한 경계 고리를 "고리(재사용) → 중간 고리(신규) → 중심(신규)" 로 닫는다.
         func close(loop: [Int], pocket: Bool) -> CapClosure {
             let n = loop.count
+            let triStart = indices.count
             let ringPos = loop.map { positions[$0] }
             let c = ringPos.reduce(.zero, +) / Float(n)
             var nFace = ringPos.reduce(SIMD3<Float>.zero) { $0 + simd_normalize($1 - c) }
@@ -124,7 +136,8 @@ public enum CapBuilder {
                 let j = (i + 1) % n
                 appendTriangle(midIDs[i], midIDs[j], centerID, outward: nFace)
             }
-            return CapClosure(ringSize: n, addedTriangles: n * 3)
+            return CapClosure(ringSize: n, addedTriangles: n * 3, loopVertexIDs: loop, addedVertexIDs: midIDs + [centerID],
+                              triangleIndexRange: triStart..<indices.count)
         }
 
         var usedVertices = Set<Int>()
@@ -147,10 +160,18 @@ public enum CapBuilder {
         newTemplate.uvs = uvs
         newTemplate.cornerUVs = corner
         newTemplate.indices = indices
+        let caps = [eyeLeft, eyeRight, mouth].compactMap { $0 }
         let addedCount = positions.count - template.positions.count
         if addedCount > 0 {
+            // F8: 새 정점에 "붙어 있는 테두리의 평균 델타" 를 준다 — 0 으로 두면 눈을 감아도 캡이 그대로 남아 뜯어진다.
             for (shape, arr) in newTemplate.shapeDeltas where arr.count == template.positions.count {
-                newTemplate.shapeDeltas[shape] = arr + [SIMD3<Float>](repeating: .zero, count: addedCount)
+                var newArr = arr + [SIMD3<Float>](repeating: .zero, count: addedCount)
+                for cap in caps {
+                    guard !cap.loopVertexIDs.isEmpty else { continue }
+                    let avg = cap.loopVertexIDs.reduce(SIMD3<Float>.zero) { $0 + arr[$1] } / Float(cap.loopVertexIDs.count)
+                    for id in cap.addedVertexIDs { newArr[id] = avg }
+                }
+                newTemplate.shapeDeltas[shape] = newArr
             }
             if newTemplate.skin.count == template.positions.count {
                 newTemplate.skin += [SkinInfluence](repeating: .none, count: addedCount)

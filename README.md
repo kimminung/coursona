@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1 완료**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **86개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫는 얼굴면 분리까지 끝났다. 화면 UI 는 아직 자리표시자이고, 피팅·텍스처·전송은 다음 단계(C2~)다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2 완료**(F7 제외). `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **90개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 화면 UI 는 아직 자리표시자이고, 캡처·텍스처·전송은 다음 단계(C3~)다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -16,16 +16,26 @@
 
 초상(Chosang) 프로젝트에서 검증한 "블렌더 흉상 + ARKit 패치 치환" 피팅은 그대로 가져오되, **눈알·입안을 따로 띄워 생기던 돌출·어긋남을 없앤다** — 분리된 물체 대신 같은 메시 안에서 눈·입 구멍을 자연스럽게 닫는다. 얼굴면만 또렷하게 보이고 나머지(머리·목·어깨)는 입체감만 있는 투명한 흉상으로 완성한다.
 
-## 지금까지 구현된 것 (C0·C1)
+## 지금까지 구현된 것 (C0·C1·C2)
 
 문서가 아니라 실제로 빌드·테스트되는 코드 기준이다.
 
 - **`CoursonaKit` 로컬 패키지** — 초상(Chosang)의 `ChosangKit` 을 복사해 11개 모듈로 포팅(Core·Capture·ML·Fit·Face·Texture·Splat·Rig·Drive·IO·Validate). 식별자·파일 확장자·UTI 를 전부 Coursona 로 바꿨다. `CoursonaFace`·`CoursonaSplat`·`CoursonaML`·`CoursonaDrive` 는 이 프로젝트에만 있는 신규 모듈이다.
 - **등급 자동 판정** — `TierClassifier`: Face ID 카메라가 있고 2초 안에 깊이가 들어오면 A, 아니면 B. 아무 기기도 막지 않는다.
 - **얼굴면 분리 + 눈·입 구멍 닫기** — `FaceSurfacePartitioner`(얼굴면 삼각형만 앞쪽으로 재배열) + `CapBuilder`(경계 변 위상 탐색으로 눈·입의 실제 열린 테두리를 찾아 중간 고리+중심으로 닫는다). 블렌더 내부 상수를 추측하지 않는, 처음 설계보다 더 안전한 방식으로 교체했다 — `Docs/TechPRD.md` §6.2 구현 노트.
+- **피팅된 좌표로 다시 닫기 + 표정과 같이 움직이기** — `BustEntity` 가 피팅 결과(Identity)를 템플릿에 대입한 뒤 **같은** `CapBuilder` 를 다시 불러 캡을 피팅된 모양으로 닫는다. 캡의 새 정점에는 그 캡이 붙은 테두리의 평균 델타를 줘서, 눈을 감거나 입을 벌려도 캡이 같이 움직이고 뜯어지지 않는다. 설계가 단순해져 "캡 위치를 따로 저장" 할 필요가 없어졌다 — `Docs/TechPRD.md` §6.4 구현 노트.
+- **겹침(자기교차) 검사** — `SelfIntersectionCheck`: 52개 표정 중 델타가 있는 것 각각에서 캡 삼각형이 뒤집히는지(= 겹침 의심) 확인한다.
+- **실루엣 피팅에서 눈·입 제외** — 깊이로 두상을 당기는 단계가 눈·입 안쪽은 건드리지 않고, 그 구멍 근처 깊이점(눈알·치아 자리)도 무시한다.
 - **`BustEntity` 2파트 렌더링** — 얼굴면/나머지를 별도 `LowLevelMesh.Part` + 머티리얼로 분리, 나머지는 기본 완전 투명, 디버그용 고스트 토글(`setGhostVisible`) 포함.
 - **템플릿 반입** — 초상의 기본 템플릿에서 분리 눈알·입안 파일(`EyesMouth.usdz`)만 제외하고 `Default.coursonatemplate` 로 재구성.
-- **검증**: `cd CoursonaKit && swift test` → **86개 테스트, 19개 스위트 전부 통과**(기존 피팅·텍스처 로직 포함, 새 얼굴면 테스트 4개 포함). Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **검증**: `cd CoursonaKit && swift test` → **90개 테스트, 20개 스위트 전부 통과**(기존 피팅·텍스처 로직 포함, 새 얼굴면 테스트 8개 포함). Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **남은 것**: 눈 감기·입 벌림 컷으로 셰이프를 직접 치환하는 부분(F7)은 C3(캡처)에서 그 컷 자체가 생겨야 이어받을 수 있다.
+
+### 지금 이 앱을 띄우면 보이는 것
+
+아래는 Stitch 목업이 아니라 **지금 리포의 `ContentView` 를 실제로 렌더링한 캡처**다(2026-10-05, Mac). 화면 UI 는 아직 C8 전까지 자리표시자지만, `CoursonaKit` 이 앱에 제대로 연결돼 `TierClassifier` 가 실시간으로 동작하는 것을 보여 준다 — 이 Mac 은 Face ID 카메라가 없으니 올바르게 **B 등급**으로 판정했다.
+
+<img src="Docs/screenshots/c0-contentview-mac-tier-b.png" alt="코르소나 앱 ContentView, Mac에서 렌더링 — C0 셋업 단계, 등급 B 표시" width="320">
 
 ## 예상 시나리오 — 등급별 한 걸음씩
 
@@ -130,7 +140,7 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaCapture        ARFaceTracking(A)·AVCapture+Vision(B) 캡처, TierClassifier
   Sources/CoursonaML             온디바이스 모델 래퍼(C3 에서 채움)
   Sources/CoursonaFit            피팅(Procrustes·패치 치환·RBF·실루엣)
-  Sources/CoursonaFace           얼굴면 완성 — CapBuilder(C1 구현됨), 나머지는 C2
+  Sources/CoursonaFace           얼굴면 완성 — CapBuilder·SelfIntersectionCheck(C1·C2 구현됨), F7 은 C3 이후
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU)
   Sources/CoursonaSplat          입체감(스플랫, C5 에서 채움)
   Sources/CoursonaRig            BustEntity(LowLevelMesh, 2파트 렌더)·FaceRig·ClipPlayer
@@ -149,7 +159,7 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 ```bash
 cd CoursonaKit
 swift build        # 11개 모듈 + CLI 빌드
-swift test          # 86개 테스트 — 피팅·텍스처(합성 번들)·전송·얼굴면 분리까지 전부 로컬에서 돈다
+swift test          # 90개 테스트 — 피팅·텍스처(합성 번들)·전송·얼굴면 분리·자기교차 검사까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 아직 자리표시자(현재 기기 등급만 표시)다.
@@ -160,7 +170,7 @@ swift test          # 86개 테스트 — 피팅·텍스처(합성 번들)·전�
 |---|---|---|
 | C0 | 프로젝트 셋업, `CoursonaKit` 포팅 | ✅ |
 | C1 | 한 메시·투명 흉상(분리 엔티티 폐기) | ✅ |
-| C2 | 얼굴면 완성(A 등급) | ⏳ |
+| C2 | 얼굴면 완성(A 등급) | ✅ (F7 은 C3 캡처 이후로 차단) |
 | C3 | 캡처 A/B/C | ⏳ |
 | C4 | 단안 피팅(B·C 등급) | ⏳ |
 | C5 | 텍스처·입체감(스플랫) | ⏳ |

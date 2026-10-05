@@ -19,6 +19,7 @@ import CoursonaIO
 import CoursonaValidate
 import CoursonaTexture
 import CoursonaFit
+import CoursonaFace
 #if os(macOS)
 import CoursonaRig
 import RealityKit
@@ -194,6 +195,15 @@ func run() -> Int32 {
                                                        r > (q.smileNeutralRMS ?? r) ? "  ⚠︎ 델타를 넣으니 더 멀어짐 — 템플릿 셰이프키가 ARKit 과 다르다" : "")) }
             if let n = q.notes { print("  메모: " + n) }
             print(String(format: "  RBF λ %.3g · 피벗비 %.3g", q.rbfLambda, q.rbfPivotRatio))
+            // F6·F9(C2, T-209): 피팅 좌표로 눈·입 구멍을 닫고 자기교차(겹침) 지표를 낸다.
+            var fittedForCaps = template
+            if identity.positions.count == template.vertexCount { fittedForCaps.positions = identity.positions }
+            let capped = CapBuilder.addingCaps(to: fittedForCaps)
+            let capNames: [(String, CapClosure?)] = [("왼눈", capped.eyeLeft), ("오른눈", capped.eyeRight), ("입", capped.mouth)]
+            print("  캡: " + capNames.map { name, c in c.map { "\(name) 테두리 \($0.ringSize)점" } ?? "\(name) 못 찾음" }.joined(separator: " · "))
+            let selfX = SelfIntersectionCheck.check(capped)
+            if selfX.isEmpty { print("  자기교차: 0건(겹침 없음)") }
+            else { print("  자기교차: " + selfX.map { "\($0.shape.rawValue) \($0.flippedTriangles)개" }.joined(separator: " · ")) }
             // 실루엣 진단: 그룹별 대응 수 (어디가 깊이로 맞춰졌는지)
             if !bundle.meta.sparse {
                 let aligns = FaceFitter.alignments(bundle: bundle, template: template)

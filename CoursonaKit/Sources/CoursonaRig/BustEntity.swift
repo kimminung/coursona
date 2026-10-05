@@ -50,15 +50,18 @@ public final class BustEntity {
     public private(set) var isGhostVisible = false
 
     public init(template rawTemplate: BustTemplate, identity: Identity? = nil, material: Material? = nil, preferGPU: Bool = true, enableFaceCaps: Bool = true) throws {
-        // T-102: 눈·입 구멍을 먼저 닫는다(템플릿 좌표 v0). 구멍이 없는 템플릿(합성 등)은 조용히 건너뛴다.
-        let capped = enableFaceCaps ? CapBuilder.addingCaps(to: rawTemplate) : CapBuildResult(template: rawTemplate, eyeLeft: nil, eyeRight: nil, mouth: nil, addedVertexIDs: [])
+        var id = identity ?? Identity.fromTemplate(rawTemplate)
+        // F5·F6(v1, C2): Identity 가 진짜 피팅 결과면(정점 수가 원본 템플릿과 같다) 그 좌표로 눈·입 구멍을 닫는다 —
+        // 캡은 항상 "지금 얼굴 모양" 기준이라 템플릿 좌표(v0)와 피팅 좌표(v1)가 같은 함수를 그대로 쓴다.
+        var fittedTemplate = rawTemplate
+        if id.positions.count == rawTemplate.vertexCount { fittedTemplate.positions = id.positions }
+        // T-102: 눈·입 구멍을 닫는다. 구멍이 없는 템플릿(합성 등)은 조용히 건너뛴다.
+        let capped = enableFaceCaps ? CapBuilder.addingCaps(to: fittedTemplate) : CapBuildResult(template: fittedTemplate, eyeLeft: nil, eyeRight: nil, mouth: nil, addedVertexIDs: [])
         let template = capped.template
         self.template = template
         self.capClosure = capped
-        var id = identity ?? Identity.fromTemplate(template)
         if id.positions.count != template.vertexCount {
-            // 캡 이전(또는 다른 템플릿 버전) Identity 를 받으면 늘어난 만큼 템플릿 좌표로 채운다.
-            // 피팅 결과가 캡까지 포함하게 만드는 건 C2(F6 v1)의 일이다.
+            // 캡 이전(또는 다른 템플릿 버전) Identity 를 받으면 늘어난 만큼(캡이 새로 만든 정점) 채운다.
             if id.positions.count < template.vertexCount {
                 id.positions += Array(template.positions[id.positions.count...])
             } else {
