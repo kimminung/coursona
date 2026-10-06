@@ -60,8 +60,22 @@ public final class BustEntity {
     /// 눈 캡 전용 머티리얼 인덱스(T-604, 있을 때만) — `applyGaze` 가 UV 오프셋을 넣을 자리.
     private var eyeCapMaterialIndexLeft: Int?
     private var eyeCapMaterialIndexRight: Int?
+    private var mouthCapMaterialIndex: Int?
     /// 시선 UV 오프셋 한계(§6.7 — 홍채 반지름의 절반 근처).
     private let eyeGazeMaxUVOffset: Float = 0.08
+
+    // 입체감 v2(2026-10-06): `EyesMouth.usdz`(눈알 2 + 치아·잇몸·혀·입안) 를 붙였을 때의 상태 — `attachEyesMouth` 참고.
+    /// 눈알 피벗(회전 중심 = 피팅된 눈 중심). 있으면 `applyGaze` 가 캡 UV 대신 이걸 돌린다.
+    private var eyePivotL: Entity?
+    private var eyePivotR: Entity?
+    /// 입안(`Mouth_Inner`) 모델 — `update(weights:)` 가 jawOpen 등 5개 셰이프를 `BlendShapeWeightsComponent` 로 넘긴다.
+    private var mouthInner: ModelEntity?
+    public private(set) var hasEyesMouth = false
+    /// 시선 최대 회전(rad) — TechPRD "눈 뼈 look-at 최대 ±25°" 보다 조금 보수적으로.
+    private let eyeGazeMaxRadians: Float = 0.35
+    /// 템플릿(레스트) 입 루프 중심 — `Mouth_Inner` 를 피팅된 입 위치로 옮길 때의 기준(init 에서 rawTemplate 로 계산).
+    private let restMouthCenter: SIMD3<Float>
+    private let fittedMouthCenter: SIMD3<Float>
 
     public init(template rawTemplate: BustTemplate, identity: Identity? = nil, material: Material? = nil, preferGPU: Bool = true, enableFaceCaps: Bool = true) throws {
         var id = identity ?? Identity.fromTemplate(rawTemplate)
@@ -77,6 +91,18 @@ public final class BustEntity {
         // T-504 배선: 캡 열기 전(=rawTemplate 구조 + 피팅 좌표) 상태를 보존해 `SplatBinder` 에 그대로 넘긴다.
         self.rawTemplateForSplats = fittedTemplate
         self.identityForSplats = id
+        // 입 루프(패치 경계 36점) 중심 — 템플릿 좌표와 피팅 좌표 각각. 루프 정보가 없으면 manifest.mouthCenter/0.
+        do {
+            let loop = rawTemplate.manifest.patchLoops["mouth"] ?? []
+            func centroid(_ ps: [SIMD3<Float>]) -> SIMD3<Float>? {
+                let ids = loop.filter { $0 >= 0 && $0 < ps.count }
+                guard !ids.isEmpty else { return nil }
+                return ids.reduce(SIMD3<Float>.zero) { $0 + ps[$1] } / Float(ids.count)
+            }
+            let fallback = rawTemplate.manifest.mouthCenter.flatMap { $0.count == 3 ? SIMD3<Float>($0[0], $0[1], $0[2]) : nil } ?? .zero
+            restMouthCenter = centroid(rawTemplate.positions) ?? fallback
+            fittedMouthCenter = centroid(fittedTemplate.positions) ?? restMouthCenter
+        }
         if id.positions.count != template.vertexCount {
             // 캡 이전(또는 다른 템플릿 버전) Identity 를 받으면 늘어난 만큼(캡이 새로 만든 정점) 채운다.
             if id.positions.count < template.vertexCount {
@@ -193,6 +219,7 @@ public final class BustEntity {
         if capped.mouth != nil {
             let r = partition.capRanges[capRangeIdx]; capRangeIdx += 1
             materials.append(capMaterial(roughnessValue: 0.7, clearcoatValue: 0))
+            mouthCapMaterialIndex = materials.count - 1
             parts.append(LowLevelMesh.Part(indexOffset: r.lowerBound * MemoryLayout<UInt32>.size, indexCount: r.count, topology: .triangle,
                                            materialIndex: materials.count - 1, bounds: bounds(of: r)))
         }
@@ -271,6 +298,153 @@ public final class BustEntity {
         }
         lastUpdateMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
         updateCount += 1
+        updateMouthInner(weights)
+    }
+
+    // MARK: 눈알·입안 엔티티 (EyesMouth.usdz, 입체감 v2)
+
+    /// `EyesMouth.usdz`(`TemplateStore.eyesMouthURL` → `Entity(contentsOf:)`) 를 붙인다.
+    /// - 눈알(`Eye_L`/`Eye_R`): **피팅된 눈 중심**(`identity.eyeCenterL/R`, 눈꺼풀 링 구 피팅)에 피벗을 두고, 반지름 비
+    ///   (`identity.eyeRadius / template.eyeRadius`)로 키운다. USDZ 눈알은 템플릿 눈 중심(`manifest.eyeL/R`)에 모델링돼
+    ///   있으니 피벗 아래에서 그만큼 되돌려 놓는다 — 그러면 피벗 회전이 곧 눈알 회전(시선)이다.
+    /// - 입안(`Mouth_Inner`): 템플릿 입 루프 중심 → 피팅 입 루프 중심으로 옮기고 머리 스케일(`identity.scale`)로 맞춘다.
+    ///   `jawOpen` 등은 `update(weights:)` 가 `BlendShapeWeightsComponent` 로 넘긴다(Chosang 과 같은 경로).
+    /// - 눈·입 캡은 완전 투명으로 — 구멍은 눈알/입안이 채우고, 테두리는 LidInner/LipInner 띠가 가린다.
+    /// 전부 `model` 의 자식이라 머리 포즈·숨쉬기를 같이 따라간다.
+    public func attachEyesMouth(_ loaded: Entity) {
+        guard !hasEyesMouth else { return }
+        let m = template.manifest
+        let restEyeL = SIMD3<Float>(m.eyeL[0], m.eyeL[1], m.eyeL[2]), restEyeR = SIMD3<Float>(m.eyeR[0], m.eyeR[1], m.eyeR[2])
+        let r0 = max(1e-4, m.eyeRadius)
+        let eyeScale = max(0.5, min(2.0, identity.eyeRadius / r0))
+
+        var eyeL: Entity?, eyeR: Entity?, mouth: ModelEntity?
+        loaded.forEachDescendant { e in
+            guard e.components[ModelComponent.self] != nil else { return }
+            let n = e.name
+            if n == "Eye_L" || n.hasSuffix("_Eye_L") || n.contains("Eye_L") { eyeL = eyeL ?? e }
+            else if n == "Eye_R" || n.hasSuffix("_Eye_R") || n.contains("Eye_R") { eyeR = eyeR ?? e }
+            else if n.contains("Mouth_Inner"), let me = e as? ModelEntity { mouth = mouth ?? me }
+        }
+
+        /// `e` 를 `loaded` 기준 누적 변환(USD 계층의 upAxis·아마추어 변환 포함)을 보존한 채 새 피벗 아래로 옮긴다.
+        func reparent(_ e: Entity, under pivot: Entity, restCenter: SIMD3<Float>) {
+            let toRoot = e.transformMatrix(relativeTo: loaded)
+            var back = matrix_identity_float4x4
+            back.columns.3 = SIMD4(-restCenter.x, -restCenter.y, -restCenter.z, 1)
+            e.removeFromParent()
+            pivot.addChild(e)
+            e.transform = Transform(matrix: back * toRoot)
+        }
+        if let eyeL {
+            let p = Entity(); p.name = "EyePivot_L"
+            p.position = identity.eyeCenterL; p.scale = SIMD3(repeating: eyeScale)
+            model.addChild(p); reparent(eyeL, under: p, restCenter: restEyeL); eyePivotL = p
+        }
+        if let eyeR {
+            let p = Entity(); p.name = "EyePivot_R"
+            p.position = identity.eyeCenterR; p.scale = SIMD3(repeating: eyeScale)
+            model.addChild(p); reparent(eyeR, under: p, restCenter: restEyeR); eyePivotR = p
+        }
+        if let mouth {
+            let p = Entity(); p.name = "MouthInnerPivot"
+            p.position = fittedMouthCenter; p.scale = SIMD3(repeating: max(0.6, min(1.6, identity.scale)))
+            model.addChild(p); reparent(mouth, under: p, restCenter: restMouthCenter)
+            let comp = BlendShapeWeightsComponent(weightsMapping: BlendShapeWeightsMapping(meshResource: mouth.model?.mesh ?? MeshResource.generateBox(size: 0.001)))
+            if comp.weightSet.contains(where: { !$0.weightNames.isEmpty }) { mouth.components.set(comp) }
+            mouthInner = mouth
+        }
+        // 남은 것(아마추어 등 빈 엔티티)은 그대로 모델 아래에 — 보이지 않는다.
+        model.addChild(loaded)
+
+        guard eyePivotL != nil || eyePivotR != nil || mouthInner != nil else { return }
+        hasEyesMouth = true
+        setCapsHidden(eyes: eyePivotL != nil || eyePivotR != nil, mouth: mouthInner != nil)
+        updateMouthInner(lastWeights)
+    }
+
+    /// 눈·입 캡 머티리얼을 완전 투명으로(또는 되돌림). 캡 지오메트리는 남겨 두어 파트 순서·고스트 슬롯이 그대로다.
+    private func setCapsHidden(eyes: Bool, mouth: Bool) {
+        guard var mc = model.components[ModelComponent.self] else { return }
+        func hide(_ i: Int?) {
+            guard let i, i < mc.materials.count, var pbr = mc.materials[i] as? PhysicallyBasedMaterial else { return }
+            pbr.blending = .transparent(opacity: .init(floatLiteral: 0))
+            mc.materials[i] = pbr
+        }
+        if eyes { hide(eyeCapMaterialIndexLeft); hide(eyeCapMaterialIndexRight) }
+        if mouth { hide(mouthCapMaterialIndex) }
+        model.components[ModelComponent.self] = mc
+    }
+
+    /// `Mouth_Inner` 의 5개 셰이프(jawOpen·jawLeft·jawRight·jawForward·tongueOut) — USD 가 중복 이름에 붙인 접미 숫자
+    /// (`jawOpen2`) 를 떼고 같은 ARKit 가중치를 넣는다. 흉상의 jawOpen 과 같은 값이라 입술과 치아가 같이 움직인다.
+    private func updateMouthInner(_ weights: ArkitWeights) {
+        guard let mouthInner, var comp = mouthInner.components[BlendShapeWeightsComponent.self] else { return }
+        for i in comp.weightSet.indices {
+            var data = comp.weightSet[i]
+            for (j, full) in data.weightNames.enumerated() {
+                let name = full.split(separator: "/").last.map(String.init) ?? full
+                let base = String(name.reversed().drop(while: { $0.isNumber }).reversed())
+                data.weights[j] = ArkitShape(rawValue: base).map { weights[$0] } ?? 0
+            }
+            comp.weightSet[i] = data
+        }
+        mouthInner.components.set(comp)
+    }
+
+    /// 홍채 색을 바꾼다(사진에서 추정한 색 — 안 부르면 USDZ 기본색). 눈알 USDZ 의 머티리얼 순서는 Blender 빌드
+    /// (`uv_eyes_mouth.py`: 0 = 공막, 1 = 홍채, 2 = 동공 — 정면축 각도 9.5°/29° 로 가름)대로라, 슬롯 3개면 1번만 바꾼다.
+    public func setIrisColor(_ rgb: SIMD3<Float>) {
+        for pivot in [eyePivotL, eyePivotR].compactMap({ $0 }) {
+            pivot.forEachDescendant { e in
+                guard var mc = e.components[ModelComponent.self], mc.materials.count == 3,
+                      var pbr = mc.materials[1] as? PhysicallyBasedMaterial else { return }
+                pbr.baseColor = .init(tint: .init(red: CGFloat(rgb.x), green: CGFloat(rgb.y), blue: CGFloat(rgb.z), alpha: 1))
+                mc.materials[1] = pbr
+                e.components[ModelComponent.self] = mc
+            }
+        }
+    }
+
+    /// 사진에서 홍채 색을 추정한다: 눈 캡(눈 구멍을 닫은 팬)의 중심 정점 UV 주변 알베도 텍셀 중 **어두운 절반**의 평균
+    /// (공막은 밝고 홍채·동공은 어둡다). 캡 UV 섬은 `TextureBuilder` 가 사진을 그대로 투영한 자리라 실제 눈 색이 들어 있다.
+    /// 텍셀 행은 `(1 - v)`(TextureBuilder 와 같은 규약). 캡이 없거나 샘플이 모자라면 nil.
+    public func estimateIrisColor(from albedo: RGBAImage) -> SIMD3<Float>? {
+        guard albedo.width > 8, albedo.height > 8 else { return nil }
+        var samples: [SIMD3<Float>] = []
+        for cap in [capClosure.eyeLeft, capClosure.eyeRight].compactMap({ $0 }) {
+            guard let center = cap.addedVertexIDs.last, center < template.uvs.count else { continue }
+            let uv = template.uvs[center]
+            let cx = Int(uv.x * Float(albedo.width)), cy = Int((1 - uv.y) * Float(albedo.height))
+            let r = max(2, albedo.width / 128)
+            for dy in -r...r { for dx in -r...r where dx * dx + dy * dy <= r * r {
+                let x = cx + dx, y = cy + dy
+                guard x >= 0, y >= 0, x < albedo.width, y < albedo.height else { continue }
+                let o = (y * albedo.width + x) * 4
+                samples.append(SIMD3(Float(albedo.bytes[o]), Float(albedo.bytes[o + 1]), Float(albedo.bytes[o + 2])) / 255)
+            } }
+        }
+        guard samples.count >= 8 else { return nil }
+        samples.sort { ($0.x + $0.y + $0.z) < ($1.x + $1.y + $1.z) }
+        let dark = samples.prefix(max(4, samples.count / 2))
+        let mean = dark.reduce(SIMD3<Float>.zero, +) / Float(dark.count)
+        // 너무 어두우면(동공만 잡힘) 조금 띄워 홍채답게.
+        return simd_max(mean, SIMD3(repeating: 0.08))
+    }
+
+    /// Soban식 절차적 움직임 한 프레임: 머리 yaw/pitch/roll(rad, Head 피벗 기준) + 숨쉬기(Y 스케일, 가슴 기준) + 상하 bob.
+    /// `applyHeadPose` 와 같은 `model.transform` 을 쓰므로 둘 중 하나만 매 프레임 부른다.
+    public func applyIdleMotion(yaw: Float, pitch: Float, roll: Float, breathScale: Float, bob: Float) {
+        let headPivot = SIMD3<Float>(0, 0.36, 0)
+        let chestPivot = SIMD3<Float>(0, 0.22, 0)
+        let q = simd_quatf(angle: yaw, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: pitch, axis: SIMD3(1, 0, 0)) * simd_quatf(angle: roll, axis: SIMD3(0, 0, 1))
+        // 회전은 머리 피벗 기준, 숨 스케일은 가슴 피벗 기준: T(h) R T(-h) 뒤에 T(c) S T(-c), 마지막에 bob.
+        var rot = simd_float4x4(q)
+        rot.columns.3 = SIMD4(headPivot - q.act(headPivot), 1)
+        var sc = matrix_identity_float4x4
+        sc.columns.1.y = breathScale
+        sc.columns.3 = SIMD4(0, chestPivot.y - chestPivot.y * breathScale + bob, 0, 1)
+        model.transform = Transform(matrix: sc * rot)
     }
 
     private func cpuUpdate(_ weights: ArkitWeights) {
@@ -312,6 +486,15 @@ public final class BustEntity {
     /// `gaze` 는 대략 -1...1(피사체 기준 오른쪽·아래가 양수) — 내부에서 ±0.08 UV 로 스케일한다.
     /// 눈 캡이 없는 템플릿(구멍 없는 합성 템플릿 등)에서는 조용히 아무 일도 하지 않는다.
     public func applyGaze(_ gaze: SIMD2<Float>) {
+        let g = simd_clamp(gaze, SIMD2(repeating: -1), SIMD2(repeating: 1))
+        // 입체감 v2: 진짜 눈알이 있으면 캡 UV 대신 눈알을 돌린다. 흉상 공간은 +X 가 피사체 왼쪽(eyeL.x > 0), 정면 +Z.
+        // 피사체 오른쪽(+g.x)을 보려면 +Z 를 −X 쪽으로 → Y축 음(−) 회전; 아래(+g.y)를 보려면 +Z 를 −Y 쪽으로 → X축 양(+) 회전.
+        if eyePivotL != nil || eyePivotR != nil {
+            let q = simd_quatf(angle: -g.x * eyeGazeMaxRadians, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: g.y * eyeGazeMaxRadians, axis: SIMD3(1, 0, 0))
+            eyePivotL?.orientation = q
+            eyePivotR?.orientation = q
+            return
+        }
         guard eyeCapMaterialIndexLeft != nil || eyeCapMaterialIndexRight != nil else { return }
         guard var mc = model.components[ModelComponent.self] else { return }
         let offset = simd_clamp(gaze, SIMD2(repeating: -1), SIMD2(repeating: 1)) * eyeGazeMaxUVOffset
@@ -345,11 +528,15 @@ public final class BustEntity {
     /// 저장된 값을 그대로 믿는 쪽이 더 빠르고 "저장한 그대로 보인다"는 걸 보장한다).
     @discardableResult
     public func applySplatRecords(_ records: [SplatRecord]) -> Bool {
-        #if os(macOS)
-        if #available(macOS 27.0, *), SplatGPUBridge.isSupported(), !records.isEmpty,
+        // iOS 실기기도 OS 27 이면 네이티브 스플랫이 된다(`SplatGPUBridge` 머리말 2) — 시뮬레이터만 폴백).
+        #if !targetEnvironment(simulator)
+        if #available(visionOS 27, iOS 27, macOS 27, *), SplatGPUBridge.isSupported(), !records.isEmpty,
            let component = SplatGPUBridge.makeComponent(records: records) {
             let entity = splatEntity ?? {
-                let e = Entity(); e.name = "BustSplats"; root.addChild(e); splatEntity = e; return e
+                // `root` 가 아니라 **`model` 의 자식**으로 — 스플랫 위치는 메시와 같은 흉상 공간이라 그대로 맞고,
+                // `applyHeadPose`/숨쉬기가 `model.transform` 을 움직일 때 얼굴만 돌고 머리카락·목이 제자리에 남는
+                // 어긋남(예전 `SplatBinder` 시절부터의 한계)이 사라진다.
+                let e = Entity(); e.name = "BustSplats"; model.addChild(e); splatEntity = e; return e
             }()
             entity.components.set(component)
             entity.isEnabled = true

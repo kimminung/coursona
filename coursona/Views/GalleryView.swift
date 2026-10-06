@@ -70,9 +70,9 @@ struct GalleryView: View {
             if busyID == entry.id {
                 ProgressView().controlSize(.small)
             } else {
-                Button("열기") { open(entry) }.buttonStyle(.glass)
+                Button("열기") { Task { await open(entry) } }.buttonStyle(.glass)
                 if entry.manifest.includesCaptureBundle {
-                    Button("다시 만들기") { rebuild(entry) }.buttonStyle(.glass)
+                    Button("다시 만들기") { Task { await rebuild(entry) } }.buttonStyle(.glass)
                 }
             }
         }
@@ -83,17 +83,22 @@ struct GalleryView: View {
         entries = CoursonaPackageStore.list().map { Entry(folder: $0.folder, manifest: $0.manifest) }
     }
 
-    private func loadTemplate() throws -> BustTemplate {
-        let folder = try TemplateStore.prepareDefault()
-        return try TemplateStore.loadTemplate(from: folder)
-    }
-
-    private func open(_ entry: Entry) {
+    /// 템플릿 캐시가 없으면(최초 실행 등) `Default.coursonatemplate`(30MB) 압축 해제 + `.coursona` 패키지의
+    /// 사진·스플랫 파일 읽기가 몇 초 걸릴 수 있다 — 전부 동기 함수라 `Task.detached` 로 메인 스레드 밖에서
+    /// 돌린다(`BuildProgressView.start()` 와 같은 이유, 실기기에서 "System gesture gate timed out" 으로 확인된
+    /// 멈춤 재발 방지).
+    private func open(_ entry: Entry) async {
         busyID = entry.id
         defer { busyID = nil }
+        // `entry` 자체(Sendable 선언 없는 로컬 struct)가 아니라 필요한 값(URL, Sendable)만 복사해 닫음에 넘긴다.
+        let folder = entry.folder
         do {
-            let template = try loadTemplate()
-            let pkg = try CoursonaPackageStore.read(from: entry.folder, expectedTemplate: template.manifest)
+            let (template, pkg) = try await Task.detached(priority: .userInitiated) {
+                let templateFolder = try TemplateStore.prepareDefault()
+                let template = try TemplateStore.loadTemplate(from: templateFolder)
+                let pkg = try CoursonaPackageStore.read(from: folder, expectedTemplate: template.manifest)
+                return (template, pkg)
+            }.value
             openTemplate = template
             openPackage = pkg
             showInspection = true
@@ -102,10 +107,13 @@ struct GalleryView: View {
         }
     }
 
-    private func rebuild(_ entry: Entry) {
+    private func rebuild(_ entry: Entry) async {
         busyID = entry.id
         defer { busyID = nil }
-        guard let bundle = CoursonaPackageStore.readCaptureBundle(from: entry.folder) else {
+        let folder = entry.folder
+        guard let bundle = await Task.detached(priority: .userInitiated, operation: {
+            CoursonaPackageStore.readCaptureBundle(from: folder)
+        }).value else {
             errorText = "저장된 촬영 번들을 읽지 못했습니다."
             return
         }

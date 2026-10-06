@@ -36,15 +36,17 @@ enum AppTab: String, CaseIterable, Identifiable {
 final class AppModel {
     var tab: AppTab = .studio
 
-    /// 화면 1(등급 안내)이 보여줄 추천 등급 — 앱 시작 시 미리 판정해 둔다(TierClassifier, 🧪 실기기로
-    /// `depthTimeout=5.0` 확인됨). 판정 중엔 nil.
+    /// 화면 1(등급 안내)이 보여줄 추천 등급 — 앱 시작 시 미리 판정해 둔다(TierClassifier). 판정 전엔 nil.
     var detectedTier: CaptureTier?
     var isDetectingTier = false
 
     init() {}
 
+    /// 한 번 판정하면 다시 하지 않는다 — 시작 화면의 `.task` 는 탭을 오갈 때마다 다시 실행되는데, 같은 기기에서
+    /// 결과가 바뀔 일이 없는 하드웨어 검사라 매번 다시 할 이유가 없다(예전엔 매번 TrueDepth 세션을 켜서
+    /// 등급 배지가 B↔A 로 흔들리고 UI 가 멈추는 원인이 됐다 — `TierClassifier` 머리말 참고).
     func detectTier() async {
-        guard !isDetectingTier else { return }
+        guard detectedTier == nil, !isDetectingTier else { return }
         isDetectingTier = true
         detectedTier = await TierClassifier.detectAutomaticTier()
         isDetectingTier = false

@@ -16,6 +16,7 @@ import CoursonaFace
 import CoursonaRig
 import CoursonaSplat
 import CoursonaIO
+import CoursonaDrive
 
 private enum PosePreset: String, CaseIterable, Identifiable {
     case neutral = "무표정", smile = "미소", eyesClosed = "눈 감기", mouthOpen = "입 벌림", gaze = "시선"
@@ -45,18 +46,27 @@ struct InspectionView: View {
     @State private var showSplats = true
     @State private var showQualityDetail = false
     @State private var flippedTriangleCount: Int?
+    /// 드래그로 흉상을 좌우로 돌려 디테일을 점검한다(초상 `TemplatePreviewView.swift` 의 `dragYaw` 와 같은 패턴).
+    @State private var dragYaw: Float = 0
+    @State private var dragStartYaw: Float = 0
+    /// 입체감 v2 — Soban식 자동 움직임(숨·고개·깜빡임·시선)과 입모양 입력(마이크 / 한글 텍스트).
+    @State private var motionOn = true
+    @State private var micOn = false
+    @State private var speechText = ""
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 RealityView { content in
                     holder.setup(content: content, template: template, identity: package.identity)
-                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats)
+                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats, yaw: dragYaw, motion: motionOn)
                 } update: { _ in
-                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats)
+                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats, yaw: dragYaw, motion: motionOn)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
+                .gesture(DragGesture().onChanged { v in dragYaw = dragStartYaw + Float(v.translation.width) * 0.01 }
+                    .onEnded { _ in dragStartYaw = dragYaw })
 
                 if let count = flippedTriangleCount {
                     StatusPill(text: count == 0 ? "겹침 없음 ✓" : "겹침 의심 \(count)곳",
@@ -76,6 +86,20 @@ struct InspectionView: View {
 
                 Toggle("입체감(스플랫)", isOn: $showSplats)
                     .onChange(of: showSplats) { _, on in if !on { holder.bust?.hideOutsideFace() } }
+
+                Toggle("움직임(숨·고개·깜빡임·시선)", isOn: $motionOn)
+
+                Toggle("마이크로 입모양", isOn: $micOn)
+                    .onChange(of: micOn) { _, on in holder.setMic(on) }
+
+                HStack(spacing: 8) {
+                    TextField("말해보기 — 한글 문장을 입력", text: $speechText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { holder.speak(speechText) }
+                    Button("말하기") { holder.speak(speechText) }
+                        .buttonStyle(.glass)
+                        .disabled(speechText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
 
                 qualityCard
             }
@@ -105,7 +129,10 @@ struct InspectionView: View {
                 waited += 1
             }
             await holder.applyTexture(package.albedo)
+            // 입체감 v2: 눈알·입안(`EyesMouth.usdz`) — 텍스처 다음에(캡이 투명해지며 그 자리를 채운다).
+            await holder.attachEyesMouth(albedo: package.albedo)
         }
+        .onDisappear { holder.setMic(false) }
     }
 
     private var qualityCard: some View {
@@ -150,6 +177,7 @@ struct InspectionView: View {
 @Observable
 private final class InspectionHolder {
     var bust: BustEntity?
+    private var anchor: Entity?
     private var textureApplied = false
 
     /// `RealityViewContent` 는 visionOS 전용, 다른 플랫폼은 `RealityViewCameraContent` — 둘 다 받으려고
@@ -166,6 +194,7 @@ private final class InspectionHolder {
         // 그건 맨 흉상 전용 모드라 머리카락이 붙은 완성 페르소나에서는 카메라가 메시 안에 파묻혔다).
         anchor.position = SIMD3(0, -0.30, 0)
         content.add(anchor)
+        self.anchor = anchor
 
         let camera = PerspectiveCamera()
         camera.camera.fieldOfViewInDegrees = 34
@@ -212,11 +241,63 @@ private final class InspectionHolder {
         bust.model.components[ModelComponent.self] = mc
     }
 
-    func apply(pose: ArkitWeights, gaze: SIMD2<Float>, showSplats: Bool, records: [SplatRecord]?) {
+    /// 매 프레임 구동은 `FaceRigSystem`(ECS, `CoursonaApp.init` 에서 등록)이 맡는다 — 여기서는 그 컴포넌트의
+    /// 입력(포즈 프리셋 = 클립 레이어, 움직임 on/off)만 바꾼다. 프리셋의 eyeLook 가중치는 시스템이 `applyGaze` 로
+    /// 눈알 회전까지 이어 준다. 움직임을 끄면 머리 포즈를 중립으로 되돌린다(마지막 sway 자세에 멈추지 않게).
+    func apply(pose: ArkitWeights, gaze: SIMD2<Float>, showSplats: Bool, records: [SplatRecord]?, yaw: Float, motion: Bool) {
         guard let bust else { return }
-        bust.update(weights: pose)
-        bust.applyGaze(gaze)
+        var rig = bust.root.components[FaceRigComponent.self] ?? FaceRigComponent()
+        rig.clipWeights = pose.isEmpty ? nil : pose
+        rig.autoBlink = motion
+        rig.autoGaze = motion
+        rig.idleMotion = motion ? 1 : 0
+        bust.root.components.set(rig)
+        bust.root.components.set(BustBinding(bust: bust))
+        if !motion { bust.applyIdleMotion(yaw: 0, pitch: 0, roll: 0, breathScale: 1, bob: 0) }
         if showSplats { bust.applySplatRecords(records ?? []) }
+        anchor?.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+    }
+
+    /// 한글 문장 → 비짐 타임라인(`HangulViseme`) 을 큐에 넣는다. 말하는 동안 입술과 입안(치아·혀)이 같이 움직인다.
+    func speak(_ text: String) {
+        guard let bust, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        var rig = bust.root.components[FaceRigComponent.self] ?? FaceRigComponent()
+        rig.speak(text: text)
+        bust.root.components.set(rig)
+    }
+
+    /// 마이크 레벨 → `FaceRigComponent.audioLevel`(음량 순환 비짐). 30 Hz 폴링(Soban `MouthSource` 와 같은 주기).
+    private var mic: MicVisemeDriver?
+    private var micTask: Task<Void, Never>?
+    func setMic(_ on: Bool) {
+        micTask?.cancel(); micTask = nil
+        if !on {
+            mic?.stop(); mic = nil
+            if let bust, var rig = bust.root.components[FaceRigComponent.self] { rig.audioLevel = 0; bust.root.components.set(rig) }
+            return
+        }
+        let driver = mic ?? MicVisemeDriver()
+        mic = driver
+        micTask = Task { [weak self] in
+            await driver.start()
+            while !Task.isCancelled {
+                if let self, let bust = self.bust, var rig = bust.root.components[FaceRigComponent.self] {
+                    rig.audioLevel = driver.level
+                    bust.root.components.set(rig)
+                }
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+        }
+    }
+
+    /// 눈알·입안(`EyesMouth.usdz`) 로드 → `BustEntity.attachEyesMouth`. 템플릿 캐시 확인은 디스크를 건드리므로 메인 밖에서.
+    func attachEyesMouth(albedo: RGBAImage?) async {
+        guard let bust, !bust.hasEyesMouth else { return }
+        guard let folder = try? await Task.detached(priority: .userInitiated, operation: { try TemplateStore.prepareDefault() }).value,
+              let url = TemplateStore.eyesMouthURL(in: folder),
+              let loaded = try? await Entity(contentsOf: url) else { return }
+        bust.attachEyesMouth(loaded)
+        if let albedo, let iris = bust.estimateIrisColor(from: albedo) { bust.setIrisColor(iris) }
     }
 }
 

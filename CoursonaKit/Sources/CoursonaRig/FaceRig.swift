@@ -28,6 +28,11 @@ public struct FaceRigComponent: Component {
     public var externalIncludesBlink = false
     /// 클립(상황) 가중치 — 기본 레이어
     public var clipWeights: ArkitWeights?
+    /// Soban식 절차적 머리 움직임·숨쉬기 세기(0 = 끔, 1 = 기본). `BustBinding` 이 있을 때만 — `BustEntity.applyIdleMotion`.
+    /// 머리: yaw 0.22·sin(0.6t) · pitch 0.06·sin(0.9t+1) · roll 0.04·sin(0.45t) (Soban `PersonaPreviewView.step` 데모 모드 값),
+    /// 숨: Y 스케일 ±1% · 상하 6 mm, 1.6 rad/s(≈ 3.9 초 주기), 위상은 엔티티마다 무작위(여럿이 있어도 같이 안 숨쉰다).
+    public var idleMotion: Float = 1
+    public var idleSeed: Float = Float.random(in: 0...(2 * .pi))
 
     // 튜닝 -----------------------------------------------------------------------------
     public var speechGate: Float = 0.04
@@ -48,6 +53,7 @@ public struct FaceRigComponent: Component {
     var gazeTarget: SIMD2<Float> = .zero
     var gaze: SIMD2<Float> = .zero
     var isSetUp = false
+    var idleTime: Float = 0
     var shapeNames: Set<String> = []
     var previousViseme: Viseme = .rest
     var previousAmount: Float = 0
@@ -99,7 +105,8 @@ public struct FaceRigSystem: System {
     }
 
     public func update(context: SceneUpdateContext) {
-        let dt = Float(context.deltaTime)
+        // 탭 전환·백그라운드 복귀 뒤 첫 프레임의 큰 dt 가 깜빡임·비짐 타이머를 한 번에 건너뛰지 않게 클램프(Soban TableRenderer 와 같은 0.1 s).
+        let dt = min(0.1, Float(context.deltaTime))
         for entity in context.entities(matching: Self.query, updatingSystemWhen: .rendering) {
             guard var rig = entity.components[FaceRigComponent.self] else { continue }
             let bust = entity.components[BustBinding.self]?.bust
@@ -209,9 +216,19 @@ public struct FaceRigSystem: System {
 
             if let bust {
                 bust.update(weights: rig.lastWeights)
-                // T-604: 시선은 (라이브든 합성이든) 최종 가중치의 eyeLook 8방향에서 바로 뽑아 눈 캡 UV 로 보낸다 —
+                // T-604: 시선은 (라이브든 합성이든) 최종 가중치의 eyeLook 8방향에서 바로 뽑아 눈 캡 UV(또는 눈알 회전)로 보낸다 —
                 // `rig.gaze`(아래 레거시 경로의 각도 상태)와 달리 라이브 입력일 때도 그대로 맞는다.
                 bust.applyGaze(FaceRigSystem.gazeFromWeights(rig.lastWeights))
+                // 절차적 머리 움직임 + 숨쉬기(입체감 v2, Soban 식).
+                if rig.idleMotion > 0 {
+                    rig.idleTime += dt
+                    let t = rig.idleTime, a = rig.idleMotion, s = rig.idleSeed
+                    bust.applyIdleMotion(yaw: 0.22 * sin(0.6 * t + s) * a,
+                                         pitch: 0.06 * sin(0.9 * t + 1 + s) * a,
+                                         roll: 0.04 * sin(0.45 * t + s) * a,
+                                         breathScale: 1 + 0.01 * sin(1.6 * t + s) * a,
+                                         bob: 0.006 * sin(1.6 * t + s) * a)
+                }
             } else {
                 var target = ShapeNameAdapter.resolve(rig.lastWeights, legacyVisemes: legacyVisemes, names: rig.shapeNames)
                 target = target.mapValues { min(1, $0) }

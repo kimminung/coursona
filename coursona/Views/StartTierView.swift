@@ -94,9 +94,18 @@ struct StartTierView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Image(systemName: "person.crop.circle.badge.questionmark")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
+            if model.isDetectingTier {
+                // 등급 확인은 보통 눈 깜짝할 새 끝나지만(카메라를 켜지 않는 하드웨어 조회 한 번), 기기가 막 켜져
+                // 미디어 서비스가 아직 안 깨어 있으면 눈에 띄게 걸릴 수 있다 — 고정 아이콘만 있으면 "멈췄나?"
+                // 싶을 수 있어 실행 중임을 또렷이 보여주는 스피너로 바꾼다(실기기 탭 전환 중 렉 관찰, 2026-10-06).
+                ProgressView()
+                    .controlSize(.large)
+                    .frame(height: 40)
+            } else {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+            }
             if model.isDetectingTier {
                 Text("이 기기에 맞는 방법을 확인하는 중…")
                     .font(.footnote)

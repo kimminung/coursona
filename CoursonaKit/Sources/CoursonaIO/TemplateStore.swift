@@ -57,6 +57,13 @@ public enum TemplateStore {
         return try BustMeshFile.read(Data(contentsOf: folder.appendingPathComponent("bust.mesh")), manifest: manifest)
     }
 
+    /// 눈알 2개 + 치아·잇몸·혀·입안(`EyesMouth.usdz`, Chosang 과 같은 Blender 내보내기) — 있으면 URL, 없으면 nil
+    /// (옛 템플릿 패키지). 로드는 호출자가 `Entity(contentsOf:)` 로(async, RealityKit 의존을 IO 모듈에 안 들인다).
+    public static func eyesMouthURL(in folder: URL) -> URL? {
+        let url = folder.appendingPathComponent("EyesMouth.usdz")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     public static func loadClips(from folder: URL) -> [SampledClip] {
         let dir = folder.appendingPathComponent("clips")
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }

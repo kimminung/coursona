@@ -53,8 +53,22 @@ public enum PersonaBuildPipeline {
         }
 
         progress?(PersonaBuildProgress(stage: .splat, fraction: 0))
-        let splatResult = SplatBinder.build(template: template, identity: identity, splatColor: tex.splatColor,
-                                            fallbackSkin: tex.skinColor ?? SIMD3(0.70, 0.55, 0.45))
+        // C9: 얼굴면 밖(두피·목·어깨)은 더 이상 메시 삼각형 외접원 기반(`SplatBinder`, 둔각 삼각형에서 폭주하던
+        // 그 버그)이 아니라 촬영 사진에서 직접 뽑는다(`PhotoSplatBuilder`) — 전면 컷을 쓰고, 정렬이 없으면
+        // (드문 경우) 정렬 가능한 다른 중립 컷으로 대신하고, 그것도 없으면 빈 스플랫(고스트 폴백)으로 둔다.
+        let photoShot = [bundle.shot(.front)].compactMap { $0 }.first { alignments[$0.kind] != nil }
+            ?? bundle.neutralShots.first { alignments[$0.kind] != nil }
+        let splatResult: SplatBuildResult
+        if let shot = photoShot, let F = alignments[shot.kind] {
+            // 입체감 v2: 인물 마스크(Vision)로 배경·옷 밖 픽셀을 거르고, 메시 밖 머리카락·어깨까지 살린다. 마스크를 못 만들면
+            // (사람을 못 찾음·Vision 실패) nil 로 넘겨 v1 처럼 메시 실루엣만으로 간다.
+            var matte: PersonMatte? = nil
+            if let img = shot.image { matte = await PersonMatte.make(from: img) }
+            splatResult = PhotoSplatBuilder.build(shot: shot, faceToTemplate: F, template: template, identity: identity,
+                                                  light: tex.lights[shot.kind], personAlpha: matte?.sampler, skinColor: tex.skinColor)
+        } else {
+            splatResult = SplatBuildResult(records: [], faceTriangleCount: 0, nonFaceTriangleCount: 0)
+        }
         progress?(PersonaBuildProgress(stage: .splat, fraction: 1))
 
         progress?(PersonaBuildProgress(stage: .package, fraction: 0))

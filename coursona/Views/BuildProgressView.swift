@@ -91,8 +91,15 @@ struct BuildProgressView: View {
         stageFraction = 0
         buildTask = Task {
             do {
-                let folder = try TemplateStore.prepareDefault()
-                let t = try TemplateStore.loadTemplate(from: folder)
+                // 최초 실행(또는 앱 재설치 직후)에는 캐시가 없어 `Default.coursonatemplate`(30MB zip)를 처음
+                // 풀어야 한다 — 이 압축 해제 + `bust.mesh` 파싱이 몇 초씩 걸릴 수 있는데, 둘 다 동기 함수라
+                // 그냥 부르면 이 `Task`가 메인 액터 컨텍스트를 그대로 물려받아(암묵적 상속) 메인 스레드를 그
+                // 시간만큼 막는다 — 실기기(iPhone 16, 2026-10-06)에서 "System gesture gate timed out" 로 확인된
+                // 멈춤의 원인. `Task.detached` 로 메인 액터 밖에서 돌린다.
+                let t = try await Task.detached(priority: .userInitiated) {
+                    let folder = try TemplateStore.prepareDefault()
+                    return try TemplateStore.loadTemplate(from: folder)
+                }.value
                 guard !Task.isCancelled else { return }
                 template = t
                 let pkg = try await PersonaBuildPipeline.run(bundle: bundle, template: t, tier: tier, name: name) { p in
