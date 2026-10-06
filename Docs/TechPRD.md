@@ -87,7 +87,10 @@
 | `CoursonaRig` | `BustEntity`·`FaceRig`·`ClipPlayer`·`TemplateLoader` | 파트 4+1, 캡 머티리얼·UV 시선, regionDeltas | 복사 + 수정 |
 | **`CoursonaDrive`** (신규) | 초상 `FaceRigSystem` 일부 | 라이브 구동 소스 추상화: `ARKitFaceDriver`(iOS) · `VisionFaceDriver`(macOS·폴백) · `MicVisemeDriver`, 스무딩·합성 | 신규 |
 | `CoursonaIO` | `ChosangPackageStore`·`CaptureBundleStore`·`TemplateStore`·`ZipArchive`·`ImageCodec`·`ChosangTransfer`·`USDExport` | `.coursona` schema 2, caps/splats, 서비스명, 병합 | 복사 + 수정 |
+| **`CoursonaStudio`** (신규, C8 UI 2단계) | — | `PersonaBuildPipeline`: 캡처 번들→피팅→텍스처→스플랫→패키지 저장을 엮는 앱 수준 오케스트레이션. 화면(`BuildProgressView` 등)이 직접 호출하는 유일한 고수준 API — 다른 모듈은 전부 저수준으로 남긴다는 원칙(바로 위 문단)을 지키면서, 그걸 엮는 자리를 이 모듈 하나로 분리했다 | 신규 |
 | `coursona-validate` CLI | `chosang-validate` | `--fit`(등급별 지표), `--mono`(사진 → 의사 깊이 PNG), `--splat` | 복사 + 수정 |
+
+> 🔌 **구현(C8 UI 2단계, 2026-10-06)**: `CaptureTier`(A/B/C)를 `CoursonaCapture` → `CoursonaCore` 로 옮겼다 — `CoursonaManifest`(Core)가 등급을 저장하려면 반대 방향 의존이 필요했기 때문(판정 로직 `TierClassifier` 자체는 `CoursonaCapture` 에 그대로 남는다). 또한 **실기기·시뮬레이터 상호작용 테스트로 `PhotoCaptureSession` 의 크래시를 하나 발견·수정**했다: 카메라 화면을 열고 닫기를 반복하면(특히 시뮬레이터처럼 `canAddInput`/`canAddOutput` 이 실패하는 경로에서) `beginConfiguration`/`commitConfiguration` 과 `stopRunning` 이 꼬여 죽었다 — 세션을 만지는 호출을 전부 전용 큐 하나로 직렬화하고, 설정 실패 시에도 `defer` 로 `commitConfiguration` 이 항상 짝을 맞추게 고쳤다. 자세한 경위는 `Docs/Tasks.md` T-806.
 
 규칙(초상 CLAUDE.md 계승, 단 Combine 은 **허용**으로 변경): 순수 모델·수학은 Foundation/simd/CoreGraphics 만, 비동기 흐름은 async/await 를 기본으로 하되 **Combine 을 금지하지 않는다**(연속 스트림이 자연스러운 곳 — 예: `VisionFaceDriver`·`MicVisemeDriver` 의 실시간 신호 합성, 캡처 게이트의 디바운스 — 에서는 `Publisher` 체인을 async/await 와 함께 쓸 수 있다), `#if os(iOS)`/`#if os(macOS)`, Metal 소스는 `resources: [.copy("Shaders")]` + 런타임 컴파일, Swift Testing, 캡처 데이터·Core ML 가중치 외 대용량은 커밋 금지(모델은 LFS 또는 첫 실행 다운로드 — Q7).
 

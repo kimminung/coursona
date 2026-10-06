@@ -33,6 +33,10 @@ public struct CoursonaManifest: Codable, Sendable, Equatable {
     public var appearance: AppearanceHintsRecord?
     public var includesCaptureBundle: Bool = false
     public var files: [String: String] = ["identity": "identity.bin", "albedo": "albedo.png", "mask": "mask.png", "thumb": "thumb.png"]
+    /// C8 UI 2단계(T-701 일부) — 이 페르소나를 만든 등급. 갤러리 배지·업그레이드 병합 가능 여부에 쓴다.
+    public var tier: CaptureTier? = nil
+    /// 저장된 `splats.bin` 의 스플랫 개수(있으면). nil 이면 스플랫 없이 저장된 패키지(고스트 폴백만).
+    public var splatCount: Int? = nil
 
     public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), createdOn: String, templateID: String, templateVersion: String, vertexCount: Int) {
         self.id = id; self.name = name; self.createdAt = createdAt; self.createdOn = createdOn

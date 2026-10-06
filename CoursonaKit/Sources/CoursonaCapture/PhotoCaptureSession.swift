@@ -167,25 +167,36 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let fov = device.activeFormat.videoFieldOfView
         if fov > 1 { assumedHorizontalFOV = fov; fovIsMeasured = true }
         #endif
-        session.beginConfiguration()
-        session.sessionPreset = .high
         let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else { throw NSError(domain: "Coursona", code: 2, userInfo: [NSLocalizedDescriptionKey: "카메라 입력을 추가할 수 없습니다."]) }
-        session.addInput(input)
         let output = AVCaptureVideoDataOutput()
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
-        guard session.canAddOutput(output) else { throw NSError(domain: "Coursona", code: 3, userInfo: [NSLocalizedDescriptionKey: "비디오 출력을 추가할 수 없습니다."]) }
-        session.addOutput(output)
-        if let conn = output.connection(with: .video) {
-            // 저장 이미지는 비반전(ARKit 경로와 동일). 미리보기 거울 효과는 뷰에서.
-            if conn.isVideoMirroringSupported { conn.automaticallyAdjustsVideoMirroring = false; conn.isVideoMirrored = false }
-            #if os(iOS)
-            if conn.isVideoRotationAngleSupported(90) { conn.videoRotationAngle = 90 }   // 포트레이트 업라이트
-            #endif
+        // T-604(C8 UI 2단계) 실기기·시뮬레이터 둘 다에서 재현된 크래시 둘:
+        // 1) `stop()`이 `queue.async { stopRunning() }`를 올리는 동안 `beginConfiguration()...commitConfiguration()`
+        //    가 메인 액터에서 따로(동기적으로) 돌면, 뒤로 가기로 두 호출이 겹치면 "stopRunning may not be called
+        //    between beginConfiguration and commitConfiguration" 로 바로 죽는다. Apple 권장대로 세션을 만지는
+        //    호출을 전부 같은 전용 큐에 직렬로 올려서 겹칠 수 없게 한다(`stop()`의 `stopRunning()`도 같은 큐).
+        // 2) 그 다음 실기기 재확인(`RunCodeSnippet`/시뮬레이터 둘 다)으로 또 다른 경로를 찾았다: 시뮬레이터처럼
+        //    `canAddInput`/`canAddOutput` 이 실패하면 옛 코드는 `commitConfiguration()` 을 **안 부르고** 바로
+        //    throw 해서, 세션이 "구성 중" 상태로 영영 멈춰 버린다 — 그 뒤 아무 `stop()` 이나 똑같이 크래시한다.
+        //    `defer` 로 성공·실패 어느 경로든 beginConfiguration 과 반드시 짝을 맞춘다.
+        try queue.sync {
+            session.beginConfiguration()
+            defer { session.commitConfiguration() }
+            session.sessionPreset = .high
+            guard session.canAddInput(input) else { throw NSError(domain: "Coursona", code: 2, userInfo: [NSLocalizedDescriptionKey: "카메라 입력을 추가할 수 없습니다."]) }
+            session.addInput(input)
+            guard session.canAddOutput(output) else { throw NSError(domain: "Coursona", code: 3, userInfo: [NSLocalizedDescriptionKey: "비디오 출력을 추가할 수 없습니다."]) }
+            session.addOutput(output)
+            if let conn = output.connection(with: .video) {
+                // 저장 이미지는 비반전(ARKit 경로와 동일). 미리보기 거울 효과는 뷰에서.
+                if conn.isVideoMirroringSupported { conn.automaticallyAdjustsVideoMirroring = false; conn.isVideoMirrored = false }
+                #if os(iOS)
+                if conn.isVideoRotationAngleSupported(90) { conn.videoRotationAngle = 90 }   // 포트레이트 업라이트
+                #endif
+            }
         }
-        session.commitConfiguration()
         configured = true
     }
 

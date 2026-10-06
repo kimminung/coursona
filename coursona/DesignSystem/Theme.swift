@@ -8,7 +8,7 @@
 //
 
 import SwiftUI
-import CoursonaCapture
+import CoursonaCore
 
 extension Color {
     init(hex: UInt32) {

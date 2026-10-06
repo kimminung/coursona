@@ -4,10 +4,12 @@
 //
 //  화면 1(UXPRD) — 등급 3가지 중 하나를 고르는 시작 화면. 동등한 카드 3장 + 추천 리본 + 개인정보 한 줄.
 //  UXPRD §4 원칙: B·C 를 "열등한" 등급으로 말하지 않는다 — 각 카드는 "지금 바로"/"더 정밀하게"/"가장 빠르게"
-//  같은 긍정 문구만 쓴다. 캡처 화면 자체는 2단계에서 연결한다 — 지금은 `ComingSoonView` 로 이어진다.
+//  같은 긍정 문구만 쓴다. 2단계: 실제 캡처 화면(`CaptureGuideView`/`PhotoSuitabilityView`)으로 연결한다.
+//  Face ID 카메라(A)는 iPhone·iPad 전용이라 Mac에서는 안내만 하고 캡처로 들어가지 않는다.
 //
 
 import SwiftUI
+import CoursonaCore
 import CoursonaCapture
 
 private struct TierOption: Identifiable {
@@ -38,8 +40,7 @@ struct StartTierView: View {
                     VStack(spacing: 14) {
                         ForEach(tierOptions) { option in
                             NavigationLink {
-                                ComingSoonView(icon: option.systemImage, title: option.title,
-                                              message: "캡처 화면은 다음 단계에서 연결됩니다.")
+                                destination(for: option.id)
                             } label: {
                                 TierCard(option: option, recommended: model.detectedTier == option.id)
                             }
@@ -73,6 +74,22 @@ struct StartTierView: View {
             }
         }
         .task { await model.detectTier() }
+    }
+
+    @ViewBuilder
+    private func destination(for tier: CaptureTier) -> some View {
+        switch tier {
+        case .a:
+            #if os(iOS)
+            CaptureGuideView(source: FaceCaptureSession(), tier: .a)
+            #else
+            ComingSoonView(icon: "faceid", title: "Face ID 카메라로 만들기", message: "Face ID 카메라는 iPhone·iPad(Face ID 모델)에서만 쓸 수 있습니다.")
+            #endif
+        case .b:
+            CaptureGuideView(source: PhotoCaptureSession(), tier: .b)
+        case .c:
+            PhotoSuitabilityView()
+        }
     }
 
     private var header: some View {
@@ -138,4 +155,5 @@ private struct TierCard: View {
 
 #Preview {
     StartTierView().environment(AppModel())
+        .preferredColorScheme(.dark)
 }

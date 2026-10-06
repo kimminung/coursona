@@ -25,18 +25,13 @@
 //
 
 import Foundation
+import CoursonaCore
 #if os(iOS)
 import AVFoundation
 #endif
 
-public enum CaptureTier: String, Sendable, Equatable, CaseIterable, Codable {
-    /// Face ID 카메라(TrueDepth) — 얼굴 형태·깊이를 직접 측정한다.
-    case a
-    /// 일반 전면 카메라(Mac 전부·Face ID 없는 iPhone/iPad) — 얼굴 치수는 추정.
-    case b
-    /// 사진 1장 — 사용자가 직접 선택했을 때만. 자동 판정 결과로는 나오지 않는다.
-    case c
-}
+// `CaptureTier` 는 C8 2단계에서 `CoursonaCore`로 옮겼다(Formats.md/CaptureTier.swift) — 매니페스트가
+// 등급을 저장하려면 Core가 이 타입을 알아야 해서다. 여기선 그대로 쓰기만 한다(재선언 없음).
 
 @MainActor
 public enum TierClassifier {

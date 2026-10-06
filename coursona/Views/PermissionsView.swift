@@ -125,4 +125,5 @@ private struct PermissionCard: View {
 
 #Preview {
     NavigationStack { PermissionsView() }
+        .preferredColorScheme(.dark)
 }

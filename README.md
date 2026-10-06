@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 거의 완료, C6 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **149개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지와 `BustEntity` 장면 배선까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 라이브 구동 드라이버(ARKit·Vision·마이크, 우선순위 합성)도 코드로는 다 있지만 **카메라 권한 대화상자를 자동으로는 못 눌러 실제 추적은 아직 확인 못 했다** — 이것도 아래 참고. 화면 UI 는 1단계(뼈대 — 탭 내비게이션·등급 선택·권한 화면)가 막 끝났고, 나머지 화면(캡처·빌드·검수·거울·저장·갤러리·전송)은 단계별로 이어서 만드는 중이다. 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 상세 현황은 `Docs/Tasks.md`.
+> 상태: **구현 중 — C0·C1·C2·C4 완료, C3 거의 완료, C5 거의 완료, C6 진행 중**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **150개 전부 통과**). 눈·입을 분리 물체 없이 같은 메시 안에서 닫고, 피팅된 좌표로 다시 닫고, 표정에 맞춰 같이 움직이고, 겹침을 검사하는 것까지 끝났다. 눈 감기·입 벌림 선택 컷으로 그 셰이프를 직접 치환하는 F7, 사진 1장 적합성 검사, 저장 전 깊이 검증, B 등급 캡처 품질·인물 매트 게이트, iPad 가로 거치 기록도 완료. 단안(B·C 등급) 피팅은 C0 때 포팅한 코드가 이미 동작해서 **알고 보니 끝나 있었다**(🧪 실기기로 iPhone 16·MacBook Air M4 둘 다 직접 확인 완료) — 아래 "구현된 것"에 그 경위를 적었다. 텍스처(캡 UV 섬·faceOnly·눈입 투영)·스플랫 바인딩에 이어 RealityKit 브리지와 `BustEntity` 장면 배선까지 끝났는데, **그 과정에서 중요한 제약을 하나 발견했다** — 아래 참고. 라이브 구동 드라이버(ARKit·Vision·마이크, 우선순위 합성)도 코드로는 다 있지만 **카메라 권한 대화상자를 자동으로는 못 눌러 실제 추적은 아직 확인 못 했다** — 이것도 아래 참고. 화면 UI 는 등급 선택→캡처→빌드→검수→저장까지 1~3단계가 끝나서 **처음부터 끝까지 한 바퀴 실제로 돈다**(Mac에서 합성 번들로 확인) — 거울(라이브 구동)·갤러리·전송·접근성 다듬기(4~6단계)는 단계별로 이어서 만드는 중이다. 카메라 보정 데이터 저장(의도적 보류)은 다음 단계다. 2026-10-06부터 아이폰 실기기·시뮬레이터 테스트는 사용자 요청으로 임시 중단하고 Mac 빌드·`RunCodeSnippet`·`RenderPreview`로만 검증하고 있다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -20,7 +20,7 @@
 
 문서가 아니라 실제로 빌드·테스트되는 코드 기준이다.
 
-- **`CoursonaKit` 로컬 패키지** — 초상(Chosang)의 `ChosangKit` 을 복사해 11개 모듈로 포팅(Core·Capture·ML·Fit·Face·Texture·Splat·Rig·Drive·IO·Validate). 식별자·파일 확장자·UTI 를 전부 Coursona 로 바꿨다. `CoursonaFace`·`CoursonaSplat`·`CoursonaML`·`CoursonaDrive` 는 이 프로젝트에만 있는 신규 모듈이다.
+- **`CoursonaKit` 로컬 패키지** — 초상(Chosang)의 `ChosangKit` 을 복사해 12개 모듈로 포팅(Core·Capture·ML·Fit·Face·Texture·Splat·Rig·Drive·IO·Validate·Studio). 식별자·파일 확장자·UTI 를 전부 Coursona 로 바꿨다. `CoursonaFace`·`CoursonaSplat`·`CoursonaML`·`CoursonaDrive`·`CoursonaStudio` 는 이 프로젝트에만 있는 신규 모듈이다.
 - **등급 자동 판정** — `TierClassifier`: Face ID 카메라가 있고 5초 안에 깊이가 들어오면 A, 아니면 B(2026-10-06 실기기 확인 — TrueDepth 깊이 프레임이 평균 ≈0.86초 간격으로 드물게 와서 옛 2초는 짧았다, 아래 "실기기(2026-10-06)" 참고). 아무 기기도 막지 않는다.
 - **얼굴면 분리 + 눈·입 구멍 닫기** — `FaceSurfacePartitioner`(얼굴면 삼각형만 앞쪽으로 재배열) + `CapBuilder`(경계 변 위상 탐색으로 눈·입의 실제 열린 테두리를 찾아 중간 고리+중심으로 닫는다). 블렌더 내부 상수를 추측하지 않는, 처음 설계보다 더 안전한 방식으로 교체했다 — `Docs/TechPRD.md` §6.2 구현 노트.
 - **피팅된 좌표로 다시 닫기 + 표정과 같이 움직이기** — `BustEntity` 가 피팅 결과(Identity)를 템플릿에 대입한 뒤 **같은** `CapBuilder` 를 다시 불러 캡을 피팅된 모양으로 닫는다. 캡의 새 정점에는 그 캡이 붙은 테두리의 평균 델타를 줘서, 눈을 감거나 입을 벌려도 캡이 같이 움직이고 뜯어지지 않는다. 설계가 단순해져 "캡 위치를 따로 저장" 할 필요가 없어졌다 — `Docs/TechPRD.md` §6.4 구현 노트.
@@ -39,7 +39,7 @@
 - **`faceOnly` 옵션(T-501 완료)** — 얼굴 패치·눈꺼풀/입술 안쪽·캡만 전체 해상도로 투영하고, 나머지(두피·목·어깨)는 그 단계에서 샘플링 자체를 건너뛴다 — 관측 없음으로 남아 **기존** 채움 로직(두피 평균·목 피부색 등)이 그대로 메운다, 새 코드 없이. 나머지 색은 `splatColor`(기본 512², 접합·페더 없이 평균만 — 스플랫은 이산적이라 이음매가 안 보임)로 따로 낸다. Metal 백엔드는 이 로직을 몰라 패리티가 깨지므로 `faceOnly` 켜지면 CPU로 강제한다 — 솔직하게 느리더라도 정확한 쪽을 택했다.
 - **스플랫 바인딩(T-503)** — `SplatBinder`: `TextureBuilder`와 **같은 "얼굴면 밖" 정의**로 비얼굴 삼각형마다 면적 비례 1~3개 스플랫을 바인딩(위치·외접원 기준 스케일·접평면 회전), 목·어깨 1.3배, 두피 2겹(머리카락 두께 느낌), 얼굴면과 맞닿은 바깥 2겹은 완전 불투명으로 이음매를 가린다. 색은 `faceOnly`가 만든 `splatColor`에서 샘플링하고 없으면 기본 피부색. `splats.bin`(`SplatFile`, magic `CSP1`)으로 직렬화 — 렌더용 데이터와 재굽기용 바인딩(삼각형·바리센트릭·오프셋)을 분리 저장해서 나중에 변형이 생겨도 다시 구울 수 있다. **옷 평균색 등 영역별 기본색은 아직 하나(피부색)로 단순화**했다 — 옷 텍스처 소스가 없어서다. `GaussianSplatResource`가 실제로 기대하는 바이트 레이아웃도 아직 미확인(T-504에서 확인 예정).
 - **RealityKit 브리지(T-504) — 완료, 그리고 중요한 제약 발견** — `SplatGPUBridge`: Apple 공식 예제와 같은 레이아웃(인터리브 14 float, `LowLevelBuffer` + `BufferDescriptor` 5개)으로 `[SplatRecord]` → `GaussianSplatComponent`. 실제로 빌드해보고서야 알게 된 것 둘: ① `GaussianSplatComponent`/`GaussianSplatResource`는 `@available(macOS 27, *)` — 이 프로젝트 배포 타깃(OS 26)보다 높다 ② **iOS SDK 엔 이 타입이 아예 없다**("cannot find in scope", iPhone 시뮬레이터 빌드로 확인) — macOS(아마 visionOS도) 전용으로 보인다. **즉 지금 기준 iPhone·iPad에서는 네이티브 가우시안 스플랫 입체감을 아예 못 쓴다** — Mac(OS 27+, Apple7 GPU)만 된다. iOS에서는 고스트 파트 폴백이 "임시"가 아니라 사실상 기본 경로가 됐다. `isSupported()`는 두 플랫폼 공통으로(iOS는 항상 false) 가용성 체크 없이 부를 수 있게 했다. 이 Mac(M3, macOS 27.0.1)에서 실제로 `GaussianSplatComponent`를 만들어 통과까지 확인했다 — 컴파일만 되고 안 돌려본 코드가 아니다.
-- **검증**: `cd CoursonaKit && swift test` → **149개 테스트, 32개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
+- **검증**: `cd CoursonaKit && swift test` → **150개 테스트, 33개 스위트 전부 통과**. Xcode 빌드 3종(macOS·iPhone 시뮬레이터·iPad 시뮬레이터) 전부 성공.
 - **남은 것(C3)**: Vision 76점 전체 대응(`VisionCorrespondence` — 있으면 더 좋지만 지금의 8점으로도 이미 합격선을 만족해 막힌 일은 없다), 단안 깊이 추정(`CoursonaML.MonoDepthEstimator` — B 등급엔 급하지 않고 C 등급 단일 사진 품질 개선용), 배경 제거용 전체 인물 매트(OS 27 배포 타깃으로 올릴 때 재검토). `AVDepthData.cameraCalibrationData` 저장은 **의도적으로 보류**했다 — 기존 경험적 깊이 보정(`DepthRegistration`)이 이미 잘 동작하고, calibration 데이터의 실제 필드는 TrueDepth 실기기 없이는 검증할 방법이 없어서 섣불리 손대는 게 더 위험하다고 판단했다.
 - **`BustEntity` 배선(T-504b, 완료)** — `applySplats(splatColor:fallbackSkin:options:)`: `SplatBinder.build`(캡 열기 전 원본 템플릿+Identity를 따로 보관해 캡이 이중 처리되지 않게 함) → `SplatGPUBridge.makeComponent` → 성공하면 `"BustSplats"` 자식 엔티티에 `GaussianSplatComponent`를 붙이고 고스트를 자동으로 끈다. 미지원(iOS 전부·macOS<27·Apple7 미만 GPU·레코드 없음)이면 조용히 고스트 폴백. `CoursonaRig`가 `CoursonaSplat`에 새로 의존. 패키지 테스트 대상이 아닌 `BustEntity`(RealityKit·`@MainActor` 의존, F5/F6과 같은 이유)라 이 개발 Mac(OS 27.0.1)에서 `RunCodeSnippet`로 실제 부착(`splatsActive=true`, 고스트 자동 꺼짐)까지 확인했다.
 - **남은 것(C5)**: Mac 실기기 성능 측정(T-505). 실제 블렌더 UV 언랩에 `cap_eye_L` 등 자리를 비워 내보내는 건 아직 안 됐다 — 구체적인 요구사항이 정해지면 Blender+Claude Desktop MCP 작업 요청으로 정리할 예정.
@@ -64,6 +64,36 @@
 | <img src="Docs/screenshots/c8-ui1-iphone-rootview.png" alt="코르소나 앱, iPhone — 화면 1 + 하단 탭 4개(스튜디오·갤러리·정밀도·기기 연동)" width="200"> | <img src="Docs/screenshots/c8-ui1-ipad-rootview.png" alt="코르소나 앱, iPad — 화면 1 + 상단 탭 4개" width="320"> |
 
 작은 발견 하나: 처음엔 iPhone 렌더링에서 글래스 카드·탭 바 대비가 흐릿하게 나왔다 — 시스템이 라이트 모드일 때 `.glassEffect()` 가 UXPRD 가 전제하는 다크 배경과 안 맞아서였다. `RootView` 루트에 `.preferredColorScheme(.dark)` 를 강제해서 고쳤다(UXPRD §7 이 애초에 다크를 기본 테마로 정의해 둔 것과 일치).
+
+**2026-10-06, UI 2단계 완료 후**: 등급 카드를 누르면 이제 실제로 캡처가 시작된다 — 화면 2(`CaptureGuideView`, A/B 공용, 초상 `GuidedCaptureView.swift` 538줄 포팅)와 화면 3(`PhotoSuitabilityView`, C 등급)이 생겼고, 다 찍으면 "코르소나 만들기" 버튼이 새 `CoursonaStudio` 모듈의 `PersonaBuildPipeline` 을 실제로 끝까지 돌린다(피팅→텍스처→스플랫→패키지 저장, 합성 번들로 왕복 테스트 확인). 그동안 없던 것 — 캡처→빌드→저장을 하나로 엮는 코드 — 가 처음 생긴 순간이다.
+
+이 단계에서 진짜 쓸모 있었던 건 **기기 상호작용 자동화로 실제로 화면을 눌러본 것**이었다: iPhone 17 시뮬레이터에 설치해서 서브에이전트가 카드를 탭하고 뒤로 가기를 반복하게 시켰더니, 두 번 연속 재현되는 진짜 크래시를 하나 찾았다 — 카메라 화면에 들어갔다 나오면 `"AVCaptureSession stopRunning may not be called between calls to beginConfiguration and commitConfiguration"` 로 죽었다. 원인은 `PhotoCaptureSession`(B 등급 캡처 백엔드, C6 라이브 드라이버도 같이 쓴다)에 두 가지: 세션 설정과 정지가 서로 다른 스레드에서 따로 돌아 겹칠 수 있었던 것, 그리고 더 결정적으로 — 시뮬레이터처럼 카메라 연결이 실패하면 옛 코드가 `commitConfiguration()` 을 안 부르고 바로 에러를 던져서 세션이 "설정 중" 상태로 영영 멈춰버리는 것. 둘 다 고치고 같은 자동화로 5연속 빠른 진입/이탈 + 실제 "시작" 탭 + 실패 배너 경로까지 다시 돌려 크래시가 없어졌음을 확인했다. 리뷰 없이 코드만 봤으면 못 찾았을 버그다.
+
+<details>
+<summary>UXPRD 화면 2·3 포팅 메모</summary>
+
+- 초상은 iOS(ARKit)·Mac(사진 폴백)을 다른 화면으로 나눴지만, UXPRD 화면 2 는 "A/B 등급 공용 뼈대"로 정의돼 있어서 한 화면을 두 플랫폼에서 그대로 쓴다 — 햅틱(`UIImpactFeedbackGenerator` 등)만 `#if os(iOS)` 로 가리고 나머지(카메라 미리보기·점선 타원 조준점·샷 칩·글래스 하단 바)는 공유.
+- 코르소나의 `ShotKind` 는 7개(선택 2컷 포함)라 초상의 5개짜리 칩·아이콘·안내문을 그만큼 늘렸다.
+- 다 찍은 뒤: 초상은 "번들 저장 + zip 내보내기"로 끝났지만, 코르소나는 그 자리에서 바로 `PersonaBuildPipeline` 을 불러 끝까지(피팅·텍스처·스플랫·패키지 저장) 만든다. 지금 진행 표시는 최소 버전(단계 이름 텍스트 하나)이고, 3단계에서 UXPRD 화면 4(4단계 체크리스트)로 교체한다.
+- `PhotoSuitabilityReport` 는 "적합 여부 + 실패 이유 목록"만 주지, 항목별 개별 체크가 아니다 — 화면도 그 모양 그대로 보여준다(문서에 없는 5항목 체크리스트를 꾸며내지 않았다).
+
+</details>
+
+**2026-10-06, UI 3단계 완료 후**: 빌드가 끝까지 화면으로 보인다 — 화면 4(`BuildProgressView`, 4단계 체크리스트), 화면 5(`InspectionView`, 실제 `RealityView` 뷰포트 + 포즈 세그먼트 + 입체감 토글 + "겹침 없음 ✓" 배지), 화면 6·6b(`SaveShareView`, 이름 바꾸기 + zip 내보내기)가 생겼다. `RunCodeSnippet`으로 이 Mac에서 합성 번들 전체를 끝까지 돌려(피팅→텍스처→스플랫 20,876개→저장) `.coursona` zip(12MB)으로 내보내고 이름을 바꿔 재저장하는 것까지 실제로 확인했다.
+
+| 화면 4 — 빌드 진행 | 화면 6·6b — 저장·보내기 |
+|---|---|
+| <img src="Docs/screenshots/c8-ui3-mac-buildprogressview.png" alt="코르소나 앱, Mac — 화면 4 빌드 진행, 4단계 체크리스트" width="320"> | <img src="Docs/screenshots/c8-ui3-mac-saveshareview.png" alt="코르소나 앱, Mac — 화면 6 저장·보내기, 이름 입력과 내보내기 버튼" width="320"> |
+
+<details>
+<summary>UXPRD 화면 4·5·6 구현 메모</summary>
+
+- `BuildProgressView`는 UXPRD의 "4단계"를 파이프라인이 실제로 보고하는 4단계(피팅·텍스처·입체감·저장)에 그대로 대응시켰다 — "얼굴면 완성"은 별도 단계가 아니라 캡(눈·입) 닫기가 텍스처 단계 안에서 일어나므로 그 단계 문구에 자연히 들어 있다.
+- `InspectionView`는 초상 `TemplatePreviewView.swift`의 `RealityView` + `@Observable` 홀더 패턴을 그대로 재사용했다. 작업 중 발견한 것: `RealityViewContent`는 visionOS 전용이고 iOS·macOS는 `RealityViewCameraContent`라는 게 따로 있다 — `some RealityViewContentProtocol`로 받아서 플랫폼 분기 없이 하나로 처리했다.
+- `BustEntity`에 `applySplatRecords(_:)`(이미 구운 스플랫을 다시 바인딩하지 않고 그대로 붙임)와 `hideOutsideFace()`(스플랫·고스트 둘 다 끔)를 추가했다 — 저장된 페르소나를 다시 열 때(다음 단계 갤러리)도 그대로 쓸 수 있다.
+- 자기교차("겹침") 배지는 숫자를 기본 화면에 안 보여주고 "겹침 없음 ✓" 결론만 보여준다(UXPRD §4) — 자세히 보려면 품질 카드를 펼친다.
+
+</details>
 
 <details>
 <summary>이전 단계(C0~C3, 자리표시자였던 ContentView) 스크린샷 — 참고용, 접힘</summary>
@@ -207,18 +237,24 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaFace           얼굴면 완성 — CapBuilder(C1·C2 구현됨, C5 에서 캡 전용 UV 섬 추가)·SelfIntersectionCheck
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU), 내부에서 캡(눈·입)을 닫고 투영(C5, T-502)
   Sources/CoursonaSplat          입체감(스플랫) — SplatBinder·SplatFile(splats.bin)·SplatGPUBridge(RealityKit, Mac 전용) 구현됨, BustEntity.applySplats 로 배선됨
-  Sources/CoursonaRig            BustEntity(LowLevelMesh, 캡 있으면 최대 5파트/머티리얼 — 얼굴·눈 캡 2·입 캡·고스트, applyGaze)·FaceRig·ClipPlayer
+  Sources/CoursonaRig            BustEntity(LowLevelMesh, 캡 있으면 최대 5파트/머티리얼 — 얼굴·눈 캡 2·입 캡·고스트, applyGaze·applySplatRecords·hideOutsideFace)·FaceRig·ClipPlayer
   Sources/CoursonaDrive          라이브 구동 — ARKitFaceDriver(iOS)·VisionFaceDriver(Mac 기본)·MicVisemeDriver·FaceDriverCoordinator(우선순위 합성) 구현됨, 실기기·카메라 권한으로 실추적은 미검증
-  Sources/CoursonaIO             패키지·전송·zip
+  Sources/CoursonaIO             패키지·전송·zip, splats.bin·tier 저장/복원(C8 UI 2단계)
   Sources/CoursonaValidate       템플릿 계약 검사
-  Tests/CoursonaKitTests         149개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests·SplatBinderTests·SplatFileTests·SplatGPUBridgeTests·OneEuroFilterTests·VisionFaceSignalsTests 포함)
-coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 1단계(탭 셸·등급 선택·권한) 완료, 나머지는 단계별 진행 중
+  Sources/CoursonaStudio         (신규, C8 UI 2단계) PersonaBuildPipeline — 캡처 번들→피팅→텍스처→스플랫→패키지 오케스트레이션
+  Tests/CoursonaKitTests         150개 테스트(FaceSurfaceTests·FaceCompletionTests·UserShapeDeltasTests·PhotoSuitabilityTests·DepthCoverageTests·PersonCoverageTests·CaptureOrientationTests·CapUVIslandTests·FaceOnlyTextureTests·SplatBinderTests·SplatFileTests·SplatGPUBridgeTests·OneEuroFilterTests·VisionFaceSignalsTests·PersonaBuildPipelineTests 포함)
+coursona/                Xcode 앱 타깃 — CoursonaKit 연결됨, 화면 UI 3단계까지 완료(등급 선택→캡처→빌드→검수→저장 끝까지 동작), 나머지는 단계별 진행 중
   App/AppModel.swift      @Observable 앱 상태, AppTab(스튜디오·갤러리·정밀도·기기 연동)
   DesignSystem/Theme.swift 색상 토큰(UXPRD §7)·TierBadge·StatusPill
   RootView.swift           탭 셸(초상 AppTab 패턴 재사용)
-  Views/StartTierView.swift   화면 1 — 등급 3가지 카드 + 추천 배지
+  Views/StartTierView.swift   화면 1 — 등급 3가지 카드 + 추천 배지, 실제 캡처 화면으로 연결됨
+  Views/CaptureGuideView.swift 화면 2(A/B 공용) — 초상 GuidedCaptureView.swift 포팅, 완료 시 PersonaBuildPipeline 호출
+  Views/PhotoSuitabilityView.swift 화면 3(C 등급) — PhotoSuitability 체크, 사진 1장→sparse 번들 준비
+  Views/BuildProgressView.swift 화면 4 — PersonaBuildStage 4단계 체크리스트
+  Views/InspectionView.swift  화면 5 — RealityView 뷰포트, 포즈 세그먼트, 입체감 토글, 겹침 배지, 품질 카드
+  Views/SaveShareView.swift   화면 6·6b 저장부 — 이름 바꾸기, ShareLink 내보내기
   Views/PermissionsView.swift 화면 9 — 권한·시스템 상태
-  Views/ComingSoonView.swift  2~5단계 전 자리표시자(탭 전환은 바로 됨)
+  Views/ComingSoonView.swift  4~5단계(거울·갤러리·전송) 전 자리표시자(탭 전환은 바로 됨)
   Resources/Templates/Default.coursonatemplate   초상 템플릿에서 EyesMouth.usdz 제외하고 재구성(30MB)
 coursona.xcodeproj/
 tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제외 고정)
@@ -228,8 +264,8 @@ tools/make_default_template.sh   템플릿 재압축 스크립트(EyesMouth 제�
 
 ```bash
 cd CoursonaKit
-swift build        # 11개 모듈 + CLI 빌드
-swift test          # 149개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·스플랫 바인딩·GPU 브리지·splats.bin 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬·1€ 필터·Vision 얼굴 신호까지 전부 로컬에서 돈다
+swift build        # 12개 모듈 + CLI 빌드
+swift test          # 150개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들, faceOnly 포함)·스플랫 바인딩·GPU 브리지·splats.bin 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬·1€ 필터·Vision 얼굴 신호까지 전부 로컬에서 돈다
 ```
 
 앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·iPhone 시뮬레이터·iPad 시뮬레이터로 빌드된다. 화면은 1단계(탭 셸·등급 선택·권한)까지 완료, 캡처·빌드·검수·거울·저장·갤러리·전송은 단계별로 이어서 만드는 중이다.
@@ -246,7 +282,7 @@ swift test          # 149개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C5 | 텍스처·입체감(스플랫) | 🔄 — 캡 전용 UV 섬·`faceOnly` 옵션(T-501)·눈입 캡 투영(T-502)·스플랫 바인딩(T-503)·RealityKit 브리지(T-504, Mac 전용으로 판명)·`BustEntity` 장면 배선(T-504b) 완료, 실기기 성능(T-505)은 남음 |
 | C6 | 라이브 구동(거울) | 🔄 — 드라이버 3종 + 우선순위 합성(T-601~603)·`FaceRigSystem` 합성 규칙·시선 눈 캡 UV 이동(T-604) 구현, 실기기·카메라 권한 상호작용 실행·성능 실측(T-605)은 남음 |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | ⏳ |
-| C8 | 검수·마감 + 화면 UI(UXPRD 9개 화면) | 🔄 — UI 1단계(뼈대: 탭 셸·등급 선택·권한 화면, T-805) 완료, 2~6단계(캡처·빌드·검수·거울·저장·갤러리·전송·접근성, T-806~810)는 이어서 진행 중 |
+| C8 | 검수·마감 + 화면 UI(UXPRD 9개 화면) | 🔄 — UI 1단계(뼈대, T-805)·2단계(오케스트레이션+캡처, T-806)·3단계(빌드 진행·검수·저장, T-807) 완료, 4~6단계(거울·갤러리·전송·접근성, T-808~810)는 이어서 진행 중 |
 
 세부 작업 단위는 `Docs/Tasks.md` 참고.
 

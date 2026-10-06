@@ -12,6 +12,7 @@
 //   CoursonaDrive    라이브 구동(ARKit/Vision/마이크 드라이버 합성) — 신규, C6
 //   CoursonaIO       .coursona / 캡처 번들 읽기·쓰기, PNG, USD 내보내기(macOS), 전송(Bonjour+TLS) — 초상 그대로 + schema 2(C7)
 //   CoursonaValidate 템플릿·클립 계약 검사 (CLI `coursona-validate` 가 사용) — 초상 그대로
+//   CoursonaStudio   캡처 번들→피팅→텍스처→스플랫→패키지 저장 오케스트레이션 — 신규, C8 UI 2단계(화면이 쓰는 앱 수준 API)
 //
 // 규칙: 순수 모델·수학(CoursonaCore)은 Foundation/simd/CoreGraphics 만. 비동기는 async/await 기본,
 // 연속 신호(라이브 구동 등)엔 Combine 허용(TechPRD §6.1 — 초상과 달리 이 프로젝트는 Combine 을 금지하지 않는다).
@@ -29,7 +30,7 @@ let package = Package(
             name: "CoursonaKit",
             targets: [
                 "CoursonaCore", "CoursonaCapture", "CoursonaML", "CoursonaFit", "CoursonaFace",
-                "CoursonaTexture", "CoursonaSplat", "CoursonaRig", "CoursonaDrive", "CoursonaIO", "CoursonaValidate",
+                "CoursonaTexture", "CoursonaSplat", "CoursonaRig", "CoursonaDrive", "CoursonaIO", "CoursonaValidate", "CoursonaStudio",
             ]
         ),
         .executable(name: "coursona-validate", targets: ["coursona-validate"]),
@@ -88,12 +89,18 @@ let package = Package(
         ),
         .target(
             name: "CoursonaIO",
-            dependencies: ["CoursonaCore"],
+            // CoursonaSplat(C8 UI 2단계, T-701 일부): 패키지에 splats.bin 저장/복원.
+            dependencies: ["CoursonaCore", "CoursonaSplat"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
             name: "CoursonaValidate",
             dependencies: ["CoursonaCore", "CoursonaIO"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "CoursonaStudio",
+            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaTexture", "CoursonaSplat", "CoursonaIO"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
@@ -103,7 +110,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CoursonaKitTests",
-            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture", "CoursonaSplat", "CoursonaDrive"],
+            dependencies: ["CoursonaCore", "CoursonaFit", "CoursonaFace", "CoursonaTexture", "CoursonaIO", "CoursonaValidate", "CoursonaCapture", "CoursonaSplat", "CoursonaDrive", "CoursonaStudio"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

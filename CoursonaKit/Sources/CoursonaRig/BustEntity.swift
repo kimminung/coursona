@@ -321,26 +321,41 @@ public final class BustEntity {
         model.components[ModelComponent.self] = mc
     }
 
-    /// T-504 배선: 얼굴면 밖(머리·목·어깨)을 `SplatBinder` 로 바인딩해 `GaussianSplatComponent` 로 붙여본다.
+    /// C8 UI 3단계(검수 화면 "입체감" 토글 끔) — 스플랫도 고스트도 끄고 기본값(§3 "투명 = 파트 제외")으로 되돌린다.
+    /// `applySplatRecords([])` 과 다르다 — 그쪽은 실패 시 **고스트를 켜는** 폴백이라, 완전히 끄고 싶을 땐 이걸 쓴다.
+    public func hideOutsideFace() {
+        splatEntity?.isEnabled = false
+        splatsActive = false
+        setGhostVisible(false)
+    }
+
+    /// T-504 배선: 얼굴면 밖(머리·목·어깨)을 `SplatBinder` 로 **새로** 바인딩해 붙인다(캡처 직후, 아직 저장 전).
     /// 지원 안 하면(iOS 전부, macOS < 27, Apple7 미만 GPU, 레코드가 비는 경우) 조용히 고스트 폴백(`setGhostVisible(true)`)
     /// 으로 되돌아가고 false 를 돌려준다 — §6.6 "스플랫: 폴백" UI 가 이 값을 그대로 보여주면 된다.
     @discardableResult
     public func applySplats(splatColor: RGBAImage? = nil, fallbackSkin: SIMD3<Float> = SIMD3(0.70, 0.55, 0.45),
                             options: SplatBuildOptions = SplatBuildOptions()) -> Bool {
+        let records = SplatBinder.build(template: rawTemplateForSplats, identity: identityForSplats,
+                                        splatColor: splatColor, fallbackSkin: fallbackSkin, options: options).records
+        return applySplatRecords(records)
+    }
+
+    /// C8 UI 3단계 — 저장된 페르소나를 다시 열 때처럼 **이미 구운** 스플랫(`.coursona` 의 `splats.bin`)을
+    /// 그대로 붙인다. `SplatBinder.build` 를 다시 돌리지 않는다(같은 입력이면 결정적이라 재현은 되지만,
+    /// 저장된 값을 그대로 믿는 쪽이 더 빠르고 "저장한 그대로 보인다"는 걸 보장한다).
+    @discardableResult
+    public func applySplatRecords(_ records: [SplatRecord]) -> Bool {
         #if os(macOS)
-        if #available(macOS 27.0, *), SplatGPUBridge.isSupported() {
-            let bound = SplatBinder.build(template: rawTemplateForSplats, identity: identityForSplats,
-                                          splatColor: splatColor, fallbackSkin: fallbackSkin, options: options)
-            if !bound.records.isEmpty, let component = SplatGPUBridge.makeComponent(records: bound.records) {
-                let entity = splatEntity ?? {
-                    let e = Entity(); e.name = "BustSplats"; root.addChild(e); splatEntity = e; return e
-                }()
-                entity.components.set(component)
-                entity.isEnabled = true
-                splatsActive = true
-                setGhostVisible(false)
-                return true
-            }
+        if #available(macOS 27.0, *), SplatGPUBridge.isSupported(), !records.isEmpty,
+           let component = SplatGPUBridge.makeComponent(records: records) {
+            let entity = splatEntity ?? {
+                let e = Entity(); e.name = "BustSplats"; root.addChild(e); splatEntity = e; return e
+            }()
+            entity.components.set(component)
+            entity.isEnabled = true
+            splatsActive = true
+            setGhostVisible(false)
+            return true
         }
         #endif
         splatEntity?.isEnabled = false
