@@ -9,6 +9,16 @@
 //  버퍼 배치: 0 = 위치(float3, 12B) · 1 = 법선(float3, 12B) · 2 = UV(float2). 블렌드 오프셋 버퍼 = targetCount × V × float3.
 //  스키닝(목·머리·눈 뼈)은 M5(T-501) — 지금은 Head 뼈 회전을 엔티티 트랜스폼으로 근사한다.
 //
+//  입체감 v3(2026-10-07): 얼굴면 밖(두피·목·어깨)을 더는 별도 "고스트" 머티리얼 + 가우시안 스플랫 엔티티로
+//  겹쳐 보여주지 않는다 — 실기기 점검에서 "흉상 메시(고스트)+스플랫 점구름+눈알/입안" 세 겹이 따로 보이는 문제로
+//  확인됐다(사용자 스크린샷, 2026-10-06). 대신 얼굴면과 **같은 머티리얼 슬롯(0)** 을 "나머지" 파트에도 그대로
+//  쓴다 — `PersonaBuildPipeline` 이 이제 `TextureBuilder` 를 `faceOnly` 없이 돌려 두피·목·어깨까지 같은 사진
+//  투영+채움 기술로 한 장의 텍스처에 칠해 두므로(이미 있던 기능 — Chosang 시절부터의 전신 투영 경로를 되살린 것),
+//  이 메시는 "하나의 엔티티, 하나의 기술"로 머리부터 어깨까지 보인다. 눈·입 캡은 여전히 별도 머티리얼(매끈함 차이)
+//  이고, `EyesMouth.usdz` 를 붙이면 그 캡만 투명해진다(`attachEyesMouth`/`setCapsHidden`) — 그대로 둔다.
+//  `SplatBinder`/`PhotoSplatBuilder`/`SplatGPUBridge`(`CoursonaSplat` 모듈)는 완전히 쓸모가 없어져 실제로
+//  지웠다(`PersonaBuildPipeline.swift` 머리말 참고) — 되살릴 일이 있으면 git 이력에서 찾으면 된다.
+//
 
 import Foundation
 import RealityKit
@@ -16,7 +26,6 @@ import Metal
 import simd
 import CoursonaCore
 import CoursonaFace
-import CoursonaSplat
 
 public enum DeformationPath: String, Sendable { case gpuLowLevelDeformation = "LowLevelDeformation (GPU)", cpuBlend = "CPU 블렌드 (폴백)" }
 
@@ -42,21 +51,10 @@ public final class BustEntity {
     var lastWeights = ArkitWeights()
     /// `GPUBlendEngine`(OS 27+) — 배포 타깃이 26 이라 타입을 지울 수밖에 없다.
     private var gpu: AnyObject?
-    /// 얼굴면/나머지 파트 경계(T-101) — 머티리얼 인덱스 0 = 얼굴면, 1 = 나머지.
+    /// 얼굴면/나머지 파트 경계(T-101) — 입체감 v3부터는 "나머지"도 같은 머티리얼(0)을 쓰므로 경계는 UV·채움 로직에만 쓰인다.
     public let faceSurface: FaceSurfacePartition
     /// 눈·입 구멍을 닫은 결과(T-102, C1 은 템플릿 좌표 v0 — C2 F5/F6 이 피팅 좌표로 다시 닫는다).
     public let capClosure: CapBuildResult
-    private var ghostMaterial: PhysicallyBasedMaterial
-    /// 얼굴면 밖(머리·목·어깨)을 반투명 "고스트"로 보여줄지. 기본은 완전히 뺀다(TechPRD §3·§6.2 — "투명 = 파트 제외").
-    public private(set) var isGhostVisible = false
-    /// 캡 열기 전 원본 템플릿(T-504 배선) — `SplatBinder.build` 가 `TextureBuilder`/`CapBuilder` 와 같은 패턴으로
-    /// 스스로 피팅·캡 닫기를 다시 하므로, 이미 캡이 닫힌 `self.template` 을 넘기면 캡 삼각형이 이중으로 처리된다.
-    private let rawTemplateForSplats: BustTemplate
-    /// 패딩(캡 정점만큼 늘리기) 전 Identity — 위와 같은 이유로 `SplatBinder` 에는 이 원본을 넘긴다.
-    private let identityForSplats: Identity
-    /// `applySplats` 가 붙인 스플랫 엔티티(성공 시에만 존재) — §6.6 "스플랫: 폴백" UI 판단은 `splatsActive` 로.
-    private var splatEntity: Entity?
-    public private(set) var splatsActive = false
     /// 눈 캡 전용 머티리얼 인덱스(T-604, 있을 때만) — `applyGaze` 가 UV 오프셋을 넣을 자리.
     private var eyeCapMaterialIndexLeft: Int?
     private var eyeCapMaterialIndexRight: Int?
@@ -88,9 +86,6 @@ public final class BustEntity {
         let template = capped.template
         self.template = template
         self.capClosure = capped
-        // T-504 배선: 캡 열기 전(=rawTemplate 구조 + 피팅 좌표) 상태를 보존해 `SplatBinder` 에 그대로 넘긴다.
-        self.rawTemplateForSplats = fittedTemplate
-        self.identityForSplats = id
         // 입 루프(패치 경계 36점) 중심 — 템플릿 좌표와 피팅 좌표 각각. 루프 정보가 없으면 manifest.mouthCenter/0.
         do {
             let loop = rawTemplate.manifest.patchLoops["mouth"] ?? []
@@ -223,18 +218,11 @@ public final class BustEntity {
             parts.append(LowLevelMesh.Part(indexOffset: r.lowerBound * MemoryLayout<UInt32>.size, indexCount: r.count, topology: .triangle,
                                            materialIndex: materials.count - 1, bounds: bounds(of: r)))
         }
-        // 얼굴면 밖(머리·목·어깨): 기본은 완전히 뺀다(opacity 0) — "투명 = 파트 제외"(TechPRD §3).
-        // `setGhostVisible(true)` 로 디버그·시뮬레이터 폴백용 옅은 고스트(0.15)를 켤 수 있다.
-        var ghost = PhysicallyBasedMaterial()
-        ghost.baseColor = .init(tint: .init(red: 0.6, green: 0.6, blue: 0.65, alpha: 1))
-        ghost.roughness = .init(floatLiteral: 0.8)
-        ghost.metallic = .init(floatLiteral: 0)
-        ghost.blending = .transparent(opacity: .init(floatLiteral: 0))
-        ghost.faceCulling = .back
-        ghostMaterial = ghost
-        materials.append(ghost)
+        // 얼굴면 밖(두피·목·어깨): 입체감 v3부터는 "고스트"로 따로 가리지 않고 얼굴면과 **같은 머티리얼(0)** 을
+        // 그대로 쓴다 — `PersonaBuildPipeline` 이 만든 한 장의 텍스처가 이 영역까지 사진 투영+채움으로 칠해 두므로,
+        // 별도 머티리얼·별도 엔티티(스플랫) 없이 이 파트만으로 "얼굴면 기술의 확장"이 완성된다.
         parts.append(LowLevelMesh.Part(indexOffset: faceIndexCount * MemoryLayout<UInt32>.size, indexCount: restIndexCount, topology: .triangle,
-                                       materialIndex: materials.count - 1, bounds: bounds(of: faceIndexCount..<(faceIndexCount + restIndexCount))))
+                                       materialIndex: 0, bounds: bounds(of: faceIndexCount..<(faceIndexCount + restIndexCount))))
         llm.parts.replaceAll(parts)
 
         let resource = try MeshResource(from: llm)
@@ -470,18 +458,6 @@ public final class BustEntity {
         model.transform = Transform(scale: .one, rotation: q, translation: pivot - q.act(pivot) + pos)
     }
 
-    /// 얼굴면 밖(머리·목·어깨)을 옅은 고스트(opacity 0.15)로 보일지. 기본(false)은 완전히 뺀다(opacity 0).
-    /// 디버그 토글이나 스플랫 미지원 폴백(시뮬레이터 등, C5)에서 켠다.
-    public func setGhostVisible(_ visible: Bool) {
-        guard isGhostVisible != visible else { return }
-        isGhostVisible = visible
-        ghostMaterial.blending = .transparent(opacity: .init(floatLiteral: visible ? 0.15 : 0))
-        guard var mc = model.components[ModelComponent.self], !mc.materials.isEmpty else { return }
-        // 고스트는 항상 마지막 머티리얼 슬롯(T-604: 눈·입 캡이 끼어들어도 순서는 그대로 유지된다).
-        mc.materials[mc.materials.count - 1] = ghostMaterial
-        model.components[ModelComponent.self] = mc
-    }
-
     /// T-604: 시선을 눈 캡 머티리얼의 UV 오프셋으로 표현한다(기하는 그대로라 뚫림이 없다, §6.7).
     /// `gaze` 는 대략 -1...1(피사체 기준 오른쪽·아래가 양수) — 내부에서 ±0.08 UV 로 스케일한다.
     /// 눈 캡이 없는 템플릿(구멍 없는 합성 템플릿 등)에서는 조용히 아무 일도 하지 않는다.
@@ -504,52 +480,6 @@ public final class BustEntity {
         model.components[ModelComponent.self] = mc
     }
 
-    /// C8 UI 3단계(검수 화면 "입체감" 토글 끔) — 스플랫도 고스트도 끄고 기본값(§3 "투명 = 파트 제외")으로 되돌린다.
-    /// `applySplatRecords([])` 과 다르다 — 그쪽은 실패 시 **고스트를 켜는** 폴백이라, 완전히 끄고 싶을 땐 이걸 쓴다.
-    public func hideOutsideFace() {
-        splatEntity?.isEnabled = false
-        splatsActive = false
-        setGhostVisible(false)
-    }
-
-    /// T-504 배선: 얼굴면 밖(머리·목·어깨)을 `SplatBinder` 로 **새로** 바인딩해 붙인다(캡처 직후, 아직 저장 전).
-    /// 지원 안 하면(iOS 전부, macOS < 27, Apple7 미만 GPU, 레코드가 비는 경우) 조용히 고스트 폴백(`setGhostVisible(true)`)
-    /// 으로 되돌아가고 false 를 돌려준다 — §6.6 "스플랫: 폴백" UI 가 이 값을 그대로 보여주면 된다.
-    @discardableResult
-    public func applySplats(splatColor: RGBAImage? = nil, fallbackSkin: SIMD3<Float> = SIMD3(0.70, 0.55, 0.45),
-                            options: SplatBuildOptions = SplatBuildOptions()) -> Bool {
-        let records = SplatBinder.build(template: rawTemplateForSplats, identity: identityForSplats,
-                                        splatColor: splatColor, fallbackSkin: fallbackSkin, options: options).records
-        return applySplatRecords(records)
-    }
-
-    /// C8 UI 3단계 — 저장된 페르소나를 다시 열 때처럼 **이미 구운** 스플랫(`.coursona` 의 `splats.bin`)을
-    /// 그대로 붙인다. `SplatBinder.build` 를 다시 돌리지 않는다(같은 입력이면 결정적이라 재현은 되지만,
-    /// 저장된 값을 그대로 믿는 쪽이 더 빠르고 "저장한 그대로 보인다"는 걸 보장한다).
-    @discardableResult
-    public func applySplatRecords(_ records: [SplatRecord]) -> Bool {
-        // iOS 실기기도 OS 27 이면 네이티브 스플랫이 된다(`SplatGPUBridge` 머리말 2) — 시뮬레이터만 폴백).
-        #if !targetEnvironment(simulator)
-        if #available(visionOS 27, iOS 27, macOS 27, *), SplatGPUBridge.isSupported(), !records.isEmpty,
-           let component = SplatGPUBridge.makeComponent(records: records) {
-            let entity = splatEntity ?? {
-                // `root` 가 아니라 **`model` 의 자식**으로 — 스플랫 위치는 메시와 같은 흉상 공간이라 그대로 맞고,
-                // `applyHeadPose`/숨쉬기가 `model.transform` 을 움직일 때 얼굴만 돌고 머리카락·목이 제자리에 남는
-                // 어긋남(예전 `SplatBinder` 시절부터의 한계)이 사라진다.
-                let e = Entity(); e.name = "BustSplats"; model.addChild(e); splatEntity = e; return e
-            }()
-            entity.components.set(component)
-            entity.isEnabled = true
-            splatsActive = true
-            setGhostVisible(false)
-            return true
-        }
-        #endif
-        splatEntity?.isEnabled = false
-        splatsActive = false
-        setGhostVisible(true)
-        return false
-    }
 }
 
 #if !targetEnvironment(simulator)

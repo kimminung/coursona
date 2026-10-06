@@ -8,7 +8,6 @@
 
 import Foundation
 import CoursonaCore
-import CoursonaSplat
 
 public struct CoursonaPackage: Sendable {
     public var manifest: CoursonaManifest
@@ -16,10 +15,8 @@ public struct CoursonaPackage: Sendable {
     public var albedo: RGBAImage?
     public var mask: RGBAImage?
     public var thumbnail: RGBAImage?
-    /// C8 UI 2단계(T-701 일부) — `splats.bin` 으로 저장·복원된다. nil 이면 스플랫 없이 저장(고스트 폴백만).
-    public var splats: [SplatRecord]?
-    public init(manifest: CoursonaManifest, identity: Identity, albedo: RGBAImage?, mask: RGBAImage?, thumbnail: RGBAImage?, splats: [SplatRecord]? = nil) {
-        self.manifest = manifest; self.identity = identity; self.albedo = albedo; self.mask = mask; self.thumbnail = thumbnail; self.splats = splats
+    public init(manifest: CoursonaManifest, identity: Identity, albedo: RGBAImage?, mask: RGBAImage?, thumbnail: RGBAImage?) {
+        self.manifest = manifest; self.identity = identity; self.albedo = albedo; self.mask = mask; self.thumbnail = thumbnail
     }
 }
 
@@ -47,10 +44,6 @@ public enum CoursonaPackageStore {
         if let a = pkg.albedo { try ImageCodec.png(a).write(to: folder.appendingPathComponent(manifest.files["albedo"] ?? "albedo.png")) }
         if let m = pkg.mask { try ImageCodec.png(m).write(to: folder.appendingPathComponent(manifest.files["mask"] ?? "mask.png")) }
         if let t = pkg.thumbnail { try ImageCodec.png(t).write(to: folder.appendingPathComponent(manifest.files["thumb"] ?? "thumb.png")) }
-        if let splats = pkg.splats, !splats.isEmpty {
-            try SplatFile.write(splats).write(to: folder.appendingPathComponent("splats.bin"))
-            manifest.splatCount = splats.count
-        }
         if let cb = captureBundle {
             try CaptureBundleStore.write(cb, to: folder.appendingPathComponent("capture", isDirectory: true))
             manifest.includesCaptureBundle = true
@@ -81,9 +74,7 @@ public enum CoursonaPackageStore {
             guard loadImages, let d = try? Data(contentsOf: folder.appendingPathComponent(manifest.files[key] ?? def)) else { return nil }
             return try? ImageCodec.decode(d)
         }
-        var splats: [SplatRecord]? = nil
-        if loadImages, let d = try? Data(contentsOf: folder.appendingPathComponent("splats.bin")) { splats = try? SplatFile.read(d) }
-        return CoursonaPackage(manifest: manifest, identity: identity, albedo: img("albedo", "albedo.png"), mask: img("mask", "mask.png"), thumbnail: img("thumb", "thumb.png"), splats: splats)
+        return CoursonaPackage(manifest: manifest, identity: identity, albedo: img("albedo", "albedo.png"), mask: img("mask", "mask.png"), thumbnail: img("thumb", "thumb.png"))
     }
 
     public static func readCaptureBundle(from folder: URL) -> CaptureBundle? {

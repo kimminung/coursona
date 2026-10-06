@@ -3,7 +3,9 @@
 //  CoursonaCore
 //
 //  `.coursona` 패키지 manifest.json (schema 1, TechPRD §6.9).
-//  패키지 = 폴더: manifest.json, identity.bin, albedo.png, mask.png, thumb.png, (선택) capture/ 번들, (v2) splats.bin
+//  패키지 = 폴더: manifest.json, identity.bin, albedo.png, mask.png, thumb.png, (선택) capture/ 번들.
+//  입체감 v3(2026-10-07): 얼굴면 밖도 스플랫이 아니라 같은 텍스처(albedo.png)로 칠해지므로 splats.bin 은 더
+//  안 쓴다(`CoursonaSplat` 모듈 자체를 제거 — `PersonaBuildPipeline.swift` 머리말 참고).
 //
 
 import Foundation
@@ -35,8 +37,6 @@ public struct CoursonaManifest: Codable, Sendable, Equatable {
     public var files: [String: String] = ["identity": "identity.bin", "albedo": "albedo.png", "mask": "mask.png", "thumb": "thumb.png"]
     /// C8 UI 2단계(T-701 일부) — 이 페르소나를 만든 등급. 갤러리 배지·업그레이드 병합 가능 여부에 쓴다.
     public var tier: CaptureTier? = nil
-    /// 저장된 `splats.bin` 의 스플랫 개수(있으면). nil 이면 스플랫 없이 저장된 패키지(고스트 폴백만).
-    public var splatCount: Int? = nil
 
     public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), createdOn: String, templateID: String, templateVersion: String, vertexCount: Int) {
         self.id = id; self.name = name; self.createdAt = createdAt; self.createdOn = createdOn

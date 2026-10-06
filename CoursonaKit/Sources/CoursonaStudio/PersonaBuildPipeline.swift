@@ -2,24 +2,32 @@
 //  PersonaBuildPipeline.swift
 //  CoursonaStudio
 //
-//  C8 UI 2단계 — 캡처 번들 → 피팅 → 텍스처(+스플랫 색) → 스플랫 바인딩 → 패키지 저장을 하나로 엮는다.
+//  C8 UI 2단계 — 캡처 번들 → 피팅 → 텍스처 → 패키지 저장을 하나로 엮는다.
 //  지금까지 `CoursonaKit` 모듈은 전부 저수준이라(의도적으로, §6.1) 이 전체를 순서대로 부르는 코드가
 //  `coursona-validate` CLI·테스트에만 있었다 — 화면(`BuildProgressView` 등)이 쓸 수 있는 앱 수준 API가
 //  없었다는 뜻이다. 이 모듈이 그 자리를 채운다. SwiftUI/Observation 의존 없이 순수 async throws 함수로 둬서
 //  (초상이 `AppModel`을 앱 타깃에 둔 것과 같은 경계), `@Observable` 진행 상태는 앱 타깃이 이 콜백을 받아 만든다.
 //
-
+//  입체감 v3(2026-10-07): 얼굴면 밖(두피·목·어깨)을 더는 가우시안 스플랫(`PhotoSplatBuilder`)으로 따로 만들지
+//  않는다 — 실기기에서 "흉상 메시+스플랫 점구름+눈알" 세 겹이 따로 보인다는 문제가 확인됐다(사용자 스크린샷).
+//  대신 `TextureBuilder` 를 `faceOnly` 없이(전체 옵션) 돌려 **얼굴면과 같은 사진 투영+채움 기술**로 두피·목·
+//  어깨까지 한 장의 텍스처에 칠한다 — `BustEntity` 가 그 "나머지" 파트에 얼굴면과 같은 머티리얼(0)을 쓰므로
+//  (`BustEntity.swift` 머리말 참고) 이걸로 "하나의 엔티티, 얼굴면 기술의 확장"이 완성된다. 이번엔(기존 "오래된
+//  서브시스템은 지우지 말고 호출부만 바꾼다" 관례와 다르게) 쓸모가 완전히 없어졌다고 보고 `PhotoSplatBuilder`·
+//  `PersonMatte`·`SplatGPUBridge`·`SplatFile`·`SplatBinder`(`CoursonaSplat` 모듈 전체)를 실제로 지웠다 — 되살릴
+//  일이 있으면 git 이력에서 찾으면 된다.
 import Foundation
 import simd
 import CoursonaCore
 import CoursonaFit
 import CoursonaTexture
-import CoursonaSplat
 import CoursonaIO
 
-/// UXPRD 화면 4(빌드 진행)의 4단계. "얼굴면 완성"은 별도 단계가 아니라 `TextureBuilder`/`SplatBinder` 내부에서
-/// 캡(눈·입)을 닫는 과정에 자연히 포함된다(`CapBuilder.addingCaps`, T-204 구현 노트와 같은 이유) — 화면 문구는
-/// 텍스처 단계 동안 "눈과 입 주변을 자연스럽게 다듬는 중"으로 보여주면 된다(UXPRD: "캡" 같은 내부 용어 금지).
+/// UXPRD 화면 4(빌드 진행)의 4단계. "얼굴면 완성"은 별도 단계가 아니라 `TextureBuilder` 내부에서 캡(눈·입)을
+/// 닫는 과정에 자연히 포함된다(`CapBuilder.addingCaps`, T-204 구현 노트와 같은 이유) — 화면 문구는 텍스처 단계
+/// 동안 "눈과 입 주변을 자연스럽게 다듬는 중"으로 보여주면 된다(UXPRD: "캡" 같은 내부 용어 금지).
+/// `splat` 단계는 이제 별도로 할 일이 없다(텍스처 단계가 두피·목·어깨까지 이미 다 칠한다) — 화면 체크리스트
+/// 4단계 구성을 그대로 두기 위해 즉시 0→1 로 보고만 한다.
 public enum PersonaBuildStage: String, Sendable, CaseIterable {
     case fitting, texture, splat, package
 }
@@ -47,28 +55,13 @@ public enum PersonaBuildPipeline {
         let alignments = FaceFitter.alignments(bundle: bundle, template: template)
         progress?(PersonaBuildProgress(stage: .fitting, fraction: 1))
 
+        // faceOnly 없이(전체 옵션) 돌려 두피·목·어깨까지 같은 사진 투영+채움 기술로 한 장에 칠한다(머리말 참고).
         let tex = try TextureBuilder.build(bundle: bundle, template: template, identity: identity, alignments: alignments,
-                                           options: .faceOnlyPreset()) { _, frac in
+                                           options: TextureBuildOptions()) { _, frac in
             progress?(PersonaBuildProgress(stage: .texture, fraction: frac))
         }
 
         progress?(PersonaBuildProgress(stage: .splat, fraction: 0))
-        // C9: 얼굴면 밖(두피·목·어깨)은 더 이상 메시 삼각형 외접원 기반(`SplatBinder`, 둔각 삼각형에서 폭주하던
-        // 그 버그)이 아니라 촬영 사진에서 직접 뽑는다(`PhotoSplatBuilder`) — 전면 컷을 쓰고, 정렬이 없으면
-        // (드문 경우) 정렬 가능한 다른 중립 컷으로 대신하고, 그것도 없으면 빈 스플랫(고스트 폴백)으로 둔다.
-        let photoShot = [bundle.shot(.front)].compactMap { $0 }.first { alignments[$0.kind] != nil }
-            ?? bundle.neutralShots.first { alignments[$0.kind] != nil }
-        let splatResult: SplatBuildResult
-        if let shot = photoShot, let F = alignments[shot.kind] {
-            // 입체감 v2: 인물 마스크(Vision)로 배경·옷 밖 픽셀을 거르고, 메시 밖 머리카락·어깨까지 살린다. 마스크를 못 만들면
-            // (사람을 못 찾음·Vision 실패) nil 로 넘겨 v1 처럼 메시 실루엣만으로 간다.
-            var matte: PersonMatte? = nil
-            if let img = shot.image { matte = await PersonMatte.make(from: img) }
-            splatResult = PhotoSplatBuilder.build(shot: shot, faceToTemplate: F, template: template, identity: identity,
-                                                  light: tex.lights[shot.kind], personAlpha: matte?.sampler, skinColor: tex.skinColor)
-        } else {
-            splatResult = SplatBuildResult(records: [], faceTriangleCount: 0, nonFaceTriangleCount: 0)
-        }
         progress?(PersonaBuildProgress(stage: .splat, fraction: 1))
 
         progress?(PersonaBuildProgress(stage: .package, fraction: 0))
@@ -76,11 +69,8 @@ public enum PersonaBuildPipeline {
                                         templateVersion: template.manifest.version, vertexCount: template.manifest.vertexCount)
         manifest.tier = tier
         manifest.textureQuality = tex.quality
-        // `CoursonaPackageStore.write` 가 splatCount·includesCaptureBundle 을 자기 지역 복사본에만 채워 디스크로
-        // 내보낸다(호출자의 `pkg.manifest` 는 그대로 둠) — 돌려줄 값은 여기서 미리 맞춰 둔다.
-        manifest.splatCount = splatResult.records.isEmpty ? nil : splatResult.records.count
         manifest.includesCaptureBundle = true
-        let pkg = CoursonaPackage(manifest: manifest, identity: identity, albedo: tex.albedo, mask: tex.mask, thumbnail: nil, splats: splatResult.records)
+        let pkg = CoursonaPackage(manifest: manifest, identity: identity, albedo: tex.albedo, mask: tex.mask, thumbnail: nil)
         let folder = CoursonaPackageStore.defaultFolder(for: manifest.id)
         try CoursonaPackageStore.write(pkg, to: folder, captureBundle: bundle)
         progress?(PersonaBuildProgress(stage: .package, fraction: 1))

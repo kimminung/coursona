@@ -3,8 +3,9 @@
 //  coursona
 //
 //  화면 5(UXPRD) — 검수. 뷰포트가 화면의 주인공(UXPRD §4)이고 컨트롤은 그 아래 얇은 바 — 포즈 세그먼트·
-//  입체감 토글·품질 카드(접힘/펼침). 초상(Chosang) `TemplatePreviewView.swift` 의 `RealityView` 패턴
-//  (엔티티는 `@Observable` 홀더에, SwiftUI 뷰 값 타입 수명 밖에 둔다)을 재사용한다.
+//  움직임/마이크 토글·품질 카드(접힘/펼침). 입체감 v3부터 머리부터 어깨까지 하나의 텍스처 메시로 항상 보이므로
+//  (`BustEntity.swift` 머리말) 따로 켜고 끄는 토글이 없다. 초상(Chosang) `TemplatePreviewView.swift` 의
+//  `RealityView` 패턴(엔티티는 `@Observable` 홀더에, SwiftUI 뷰 값 타입 수명 밖에 둔다)을 재사용한다.
 //  자기교차("겹침") 배지는 숫자(RMS 등)를 기본 화면에 안 보여주고 "겹침 없음 ✓" 결론만 보여준다(UXPRD §4) —
 //  자세히 보려면 품질 카드를 펼친다.
 //
@@ -14,7 +15,6 @@ import RealityKit
 import CoursonaCore
 import CoursonaFace
 import CoursonaRig
-import CoursonaSplat
 import CoursonaIO
 import CoursonaDrive
 
@@ -43,7 +43,6 @@ struct InspectionView: View {
 
     @State private var holder = InspectionHolder()
     @State private var pose: PosePreset = .neutral
-    @State private var showSplats = true
     @State private var showQualityDetail = false
     @State private var flippedTriangleCount: Int?
     /// 드래그로 흉상을 좌우로 돌려 디테일을 점검한다(초상 `TemplatePreviewView.swift` 의 `dragYaw` 와 같은 패턴).
@@ -59,9 +58,9 @@ struct InspectionView: View {
             ZStack(alignment: .topLeading) {
                 RealityView { content in
                     holder.setup(content: content, template: template, identity: package.identity)
-                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats, yaw: dragYaw, motion: motionOn)
+                    holder.apply(pose: pose.weights, gaze: pose.gaze, yaw: dragYaw, motion: motionOn)
                 } update: { _ in
-                    holder.apply(pose: pose.weights, gaze: pose.gaze, showSplats: showSplats, records: package.splats, yaw: dragYaw, motion: motionOn)
+                    holder.apply(pose: pose.weights, gaze: pose.gaze, yaw: dragYaw, motion: motionOn)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
@@ -83,9 +82,6 @@ struct InspectionView: View {
                     ForEach(PosePreset.allCases) { p in Text(p.rawValue).tag(p) }
                 }
                 .pickerStyle(.segmented)
-
-                Toggle("입체감(스플랫)", isOn: $showSplats)
-                    .onChange(of: showSplats) { _, on in if !on { holder.bust?.hideOutsideFace() } }
 
                 Toggle("움직임(숨·고개·깜빡임·시선)", isOn: $motionOn)
 
@@ -244,7 +240,8 @@ private final class InspectionHolder {
     /// 매 프레임 구동은 `FaceRigSystem`(ECS, `CoursonaApp.init` 에서 등록)이 맡는다 — 여기서는 그 컴포넌트의
     /// 입력(포즈 프리셋 = 클립 레이어, 움직임 on/off)만 바꾼다. 프리셋의 eyeLook 가중치는 시스템이 `applyGaze` 로
     /// 눈알 회전까지 이어 준다. 움직임을 끄면 머리 포즈를 중립으로 되돌린다(마지막 sway 자세에 멈추지 않게).
-    func apply(pose: ArkitWeights, gaze: SIMD2<Float>, showSplats: Bool, records: [SplatRecord]?, yaw: Float, motion: Bool) {
+    /// 입체감 v3: 머리부터 어깨까지 하나의 텍스처 메시로 항상 보이므로(`BustEntity` 머리말) 따로 켜고 끌 게 없다.
+    func apply(pose: ArkitWeights, gaze: SIMD2<Float>, yaw: Float, motion: Bool) {
         guard let bust else { return }
         var rig = bust.root.components[FaceRigComponent.self] ?? FaceRigComponent()
         rig.clipWeights = pose.isEmpty ? nil : pose
@@ -254,7 +251,6 @@ private final class InspectionHolder {
         bust.root.components.set(rig)
         bust.root.components.set(BustBinding(bust: bust))
         if !motion { bust.applyIdleMotion(yaw: 0, pitch: 0, roll: 0, breathScale: 1, bob: 0) }
-        if showSplats { bust.applySplatRecords(records ?? []) }
         anchor?.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
     }
 
