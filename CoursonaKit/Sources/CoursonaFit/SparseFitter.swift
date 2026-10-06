@@ -34,6 +34,10 @@ public enum SparseFitter {
     static let triangulationPrior: Float = 1e-3
     /// 광선-법선 내적이 이보다 작으면(거의 옆에서 보는 관측) 그 컷의 그 랜드마크는 버린다.
     static let minViewWeight: Float = 0.2
+    /// 정점별 삼각측량 변위 상한(m). 눈 간격 추정이 흔들리거나(블러·반사·가려짐) 컷 간 자세가 어긋나면 `A⁻¹b` 가
+    /// 템플릿 표면에서 수십 cm~수 m 떨어진 값을 내놓을 수 있다 — RBF 중심값이 그만큼 크면 주변까지 뾰족하게 당겨
+    /// 흉상에 바늘 같은 돌기가 생긴다(겹침 의심 폭증과 함께 관측됨). `SilhouetteFitter.maxPull` 과 같은 이유의 clamp.
+    static let maxLandmarkDisplacement: Float = 0.03
 
     /// 컷 하나의 자세 정렬 + 랜드마크 광선 (템플릿 공간). 여러 컷을 합칠 때 쓴다.
     struct ShotCorrespondence {
@@ -146,7 +150,10 @@ public enum SparseFitter {
                 b += (Q * term.origin) * term.weight
             }
             let X = A.inverse * b
-            centers.append(P); values.append(X - P); names.append(entry.name)
+            var disp = X - P
+            let dl = simd_length(disp)
+            if dl > maxLandmarkDisplacement { disp *= maxLandmarkDisplacement / dl }
+            centers.append(P); values.append(disp); names.append(entry.name)
         }
         guard centers.count >= minLandmarks else { throw FitError.sparseInsufficientLandmarks(centers.count) }
 

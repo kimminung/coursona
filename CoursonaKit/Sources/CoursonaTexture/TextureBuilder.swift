@@ -381,7 +381,19 @@ public enum TextureBuilder {
             TextureRegions.paint(albedo: &albedo, state: &state, mask: isLipInner, color: lip * 0.45)
         }
         // Shoulders 는 늘 옷에 가려 직접 관측을 못 믿으므로(위 "3 accumulate" 에서 버림) Neck 평균(피부색)으로 채운다.
-        let (shoulderFilled, _) = TextureFill.fillUniform(albedo: &albedo, state: &state, sourceMask: isNeckOnly, targetMask: isShoulders)
+        // 셀카류 조명은 턱 밑(목 바로 위)이 자기 그림자로 유독 어둡게 찍히기 쉬운데, 그 평균을 그대로 어깨 전체에
+        // 칠하면 실제 피부색이 아니라 그림자가 넓게 번져 검은 얼룩처럼 보인다(실기기 스크린샷으로 확인한 회귀).
+        // 평균 밝기가 피부로 보기엔 비정상적으로 낮을 때만 최소 밝기로 끌어올린다 — 정상적인(그림자 없는) 짙은
+        // 피부톤의 목 평균은 이 정도로 어둡지 않으므로 오탐 가능성은 낮다.
+        let (shoulderFilled, neckAvg) = TextureFill.fillUniform(albedo: &albedo, state: &state, sourceMask: isNeckOnly, targetMask: isShoulders)
+        if let avg = neckAvg {
+            let luma = simd_dot(avg, SIMD3<Float>(0.2126, 0.7152, 0.0722))
+            let minLuma: Float = 0.12
+            if luma > 1e-4, luma < minLuma {
+                let boosted = avg * (minLuma / luma)
+                for i in albedo.indices where isShoulders[i] && state[i] == TextureFill.TexelState.filled.rawValue { albedo[i] = boosted }
+            }
+        }
         filled += shoulderFilled
         tick(.fill, 0.4)
         if o.scalpHairFill {

@@ -61,7 +61,7 @@ struct CaptureGuideView<Source: GuidedCaptureSource>: View {
     @State private var message = ""
     @State private var showDiagnostics = false
     @State private var importing = false
-    @State private var mirror = false
+    @State private var mirror = true
     @State private var voice = false
     @State private var flash = false
 
@@ -150,28 +150,40 @@ struct CaptureGuideView<Source: GuidedCaptureSource>: View {
     // MARK: 단계 칩 (촬영분은 썸네일)
 
     private var stepStrip: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
-                ForEach(guide.steps, id: \.self) { kind in
-                    let st = guide.state(of: kind)
-                    Button { retake(kind) } label: {
-                        VStack(spacing: 2) {
-                            if let t = thumbs[kind] {
-                                Image(decorative: t, scale: 1).resizable().aspectRatio(contentMode: .fill)
-                                    .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 6))
-                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.green, lineWidth: 1.5))
-                            } else {
-                                Image(systemName: icon(for: kind, state: st)).font(.body.weight(.semibold)).frame(height: 30)
+        // 7개 칩(58pt+간격)은 좁은 iPhone 화면 폭을 넘어 가장자리 칩이 잘린다 — 가로 스크롤로 감싸고
+        // 현재 단계로 자동 스크롤해 어떤 화면 폭에서도 모든 칩에 닿을 수 있게 한다.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassEffectContainer(spacing: 8) {
+                    HStack(spacing: 8) {
+                        ForEach(guide.steps, id: \.self) { kind in
+                            let st = guide.state(of: kind)
+                            Button { retake(kind) } label: {
+                                VStack(spacing: 2) {
+                                    if let t = thumbs[kind] {
+                                        Image(decorative: t, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                                            .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 6))
+                                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.green, lineWidth: 1.5))
+                                    } else {
+                                        Image(systemName: icon(for: kind, state: st)).font(.body.weight(.semibold)).frame(height: 30)
+                                    }
+                                    Text(shortTitle(kind)).font(.caption2)
+                                }
+                                .frame(width: 58, height: 52)
+                                .foregroundStyle(st == .current ? Color.accentColor : (st == .captured ? .green : .white.opacity(st == .skipped ? 0.5 : 0.85)))
                             }
-                            Text(shortTitle(kind)).font(.caption2)
+                            .buttonStyle(.plain)
+                            .glassEffect(st == .current ? .regular.tint(.accentColor.opacity(0.25)) : .regular, in: .rect(cornerRadius: 14))
+                            .accessibilityLabel("\(kind.title) \(st == .captured ? "촬영됨, 다시 찍기" : (st == .skipped ? "건너뜀" : (st == .current ? "현재" : "대기")))")
+                            .id(kind)
                         }
-                        .frame(width: 58, height: 52)
-                        .foregroundStyle(st == .current ? Color.accentColor : (st == .captured ? .green : .white.opacity(st == .skipped ? 0.5 : 0.85)))
                     }
-                    .buttonStyle(.plain)
-                    .glassEffect(st == .current ? .regular.tint(.accentColor.opacity(0.25)) : .regular, in: .rect(cornerRadius: 14))
-                    .accessibilityLabel("\(kind.title) \(st == .captured ? "촬영됨, 다시 찍기" : (st == .skipped ? "건너뜀" : (st == .current ? "현재" : "대기")))")
+                    .padding(.horizontal, 2)
                 }
+            }
+            .onChange(of: guide.current) { _, kind in
+                guard let kind else { return }
+                withAnimation { proxy.scrollTo(kind, anchor: .center) }
             }
         }
     }

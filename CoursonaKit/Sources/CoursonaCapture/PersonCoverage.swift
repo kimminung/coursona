@@ -15,21 +15,28 @@ import Foundation
 import CoreGraphics
 
 public enum PersonCoverage {
-    /// 얼굴 상자(이미지 좌표, 픽셀) 안을 `grid`×`grid` 로 고르게 샘플링해 `sample`(**이미지 좌표** 점 → 0...1 마스크 값)이
-    /// 0.5 를 넘는 비율을 돌려준다. 호출부가 이미지→정규화 좌표 변환(Vision 의 `NormalizedPoint(imagePoint:in:)`)을
-    /// 맡는다 — 여기서 직접 `x/width` 로 정규화하면 Vision 의 좌하단 원점 규약과 안 맞는다(실측으로 확인).
+    /// 얼굴 상자(이미지 좌표, 픽셀, **좌상단 원점** — 호출부의 `box` 규약) 안을 `grid`×`grid` 로 고르게 샘플링해
+    /// `sample`(이 좌상단 원점 이미지 좌표 점 → 0...1 마스크 값)의 **평균**을 돌려준다. 호출부가 이미지→정규화
+    /// 좌표 변환을 맡는다 — `NormalizedPoint(imagePoint:in:)` 는 전달한 좌표를 그대로(flip 없이) 정규화하는데
+    /// Vision 의 `pixel(at:)`/`ImageProcessingRequest.regionOfInterest` 규약은 **좌하단 원점**이므로, 호출부는
+    /// 이 클로저 안에서 Y 를 뒤집고서 `NormalizedPoint` 를 만들어야 한다(안 그러면 세로축이 뒤집힌 위치를 샘플링한다 —
+    /// `PhotoCaptureSession.analyze` 참고, RunCodeSnippet 으로 실측 확인한 회귀).
+    /// 값을 0.5 로 먼저 자르고 그 비율을 세지 않고 **원값을 평균**하는 이유: 조명이 한쪽으로 치우치면 그림자 진 쪽
+    /// 마스크 신뢰도가 0.5 언저리에서 흔들리는데, 이진 판정 후 비율을 내면 그 흔들림이 그대로 증폭돼(픽셀 하나하나가
+    /// "사람 0" 또는 "사람 1"로 뒤집히며) 체감상 게이트가 조명 방향에 과민하게 반응한다 — 원값 평균은 그 노이즈를
+    /// 자연스럽게 눌러 준다.
     /// 상자가 비어 있으면 1(통과)로 본다 — 상자를 못 구하면 이 게이트가 막을 이유가 없다.
     public static func ratio(faceBoxImageCoords box: CGRect, grid: Int = 5, sample: (CGPoint) -> Float) -> Float {
         guard box.width > 0, box.height > 0 else { return 1 }
-        var hits = 0, total = 0
+        var sum: Float = 0, total = 0
         for i in 0..<grid {
             for j in 0..<grid {
                 let fx = (Double(i) + 0.5) / Double(grid), fy = (Double(j) + 0.5) / Double(grid)
                 let imagePoint = CGPoint(x: box.minX + box.width * fx, y: box.minY + box.height * fy)
                 total += 1
-                if sample(imagePoint) > 0.5 { hits += 1 }
+                sum += sample(imagePoint)
             }
         }
-        return total > 0 ? Float(hits) / Float(total) : 1
+        return total > 0 ? sum / Float(total) : 1
     }
 }

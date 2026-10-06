@@ -95,6 +95,15 @@ struct InspectionView: View {
         }
         .task {
             flippedTriangleCount = computeFlippedTriangles()
+            // `RealityView` 의 콘텐츠 클로저(`holder.setup`, `holder.bust` 를 채운다)가 이 `.task` 보다 늦게
+            // 실행될 수 있다 — 그러면 `applyTexture` 가 `bust == nil` 로 조용히 아무것도 안 하고 끝나고,
+            // 재시도가 없어 사진 텍스처가 영영 안 올라가고 기본(살구색) 머티리얼만 남는다(실기기에서 재현:
+            // 매번 똑같은 민무늬 얼굴). `bust` 가 생길 때까지 잠깐 기다렸다가 적용한다.
+            var waited = 0
+            while holder.bust == nil, waited < 30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                waited += 1
+            }
             await holder.applyTexture(package.albedo)
         }
     }
@@ -148,6 +157,14 @@ private final class InspectionHolder {
     func setup(content: some RealityViewContentProtocol, template: BustTemplate, identity: Identity) {
         guard bust == nil else { return }
         let anchor = Entity()
+        // 초상(Chosang) `TemplatePreviewView.swift` 의 기본("orbit") 카메라와 같은 값 — `PrevizCameraSpec.contract`
+        // 는 그 프로젝트에서도 "맨 흉상"(머리카락·옷 없음) previz QA 전용 모드에서만 쓰고(기본값 off), 평소
+        // 보기 모드는 이 고정 카메라 + **anchor 를 Y -0.30 만큼 내려 얼굴을 시야 안으로 당기는 트릭**을 쓴다.
+        // 이 화면은 그 두 번째(= 머리카락·옷 입은 완성 페르소나를 보여주는 실제 쓰임) 패턴을 그대로 가져왔어야
+        // 하는데 카메라 값만 베끼고 이 anchor 오프셋을 빠뜨려서, 얼굴(Y≈0.3~0.5)이 항상 시야 위로 잘려 나갔다
+        // (실기기 스크린샷 + Chosang 소스 대조로 확인한 회귀 — 한 번은 `PrevizCameraSpec.contract` 로 바꿔 봤지만
+        // 그건 맨 흉상 전용 모드라 머리카락이 붙은 완성 페르소나에서는 카메라가 메시 안에 파묻혔다).
+        anchor.position = SIMD3(0, -0.30, 0)
         content.add(anchor)
 
         let camera = PerspectiveCamera()

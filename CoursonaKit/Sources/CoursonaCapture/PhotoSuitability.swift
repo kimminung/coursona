@@ -43,9 +43,11 @@ public enum PhotoSuitability {
         guard let a = try await PhotoCaptureSession.analyze(image) else { return nil }
         let brightness = PhotoCaptureSession.brightness(image, in: a.box)
         let faceWidthRatio = Float(a.box.width) / Float(max(1, image.width))
+        // 단일 사진 검사는 항상 `scoreQuality: true` 로 분석하므로(analyze 기본값) 실제로는 nil 이 안 나오지만,
+        // 타입상 Optional(throttle 때문에 라이브 프레임 경로와 공유) 이라 기본값 1 로 안전하게 푼다.
         return evaluate(yaw: a.pose.x, pitch: a.pose.y, eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio,
-                        brightness: brightness, faceWidthRatio: faceWidthRatio, captureQualityScore: a.captureQualityScore,
-                        personCoverage: a.personCoverage, gate: gate)
+                        brightness: brightness, faceWidthRatio: faceWidthRatio, captureQualityScore: a.captureQualityScore ?? 1,
+                        personCoverage: a.personCoverage ?? 1, gate: gate)
     }
 #endif
 }

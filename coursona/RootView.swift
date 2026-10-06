@@ -32,7 +32,7 @@ struct RootView: View {
     private func content(for tab: AppTab) -> some View {
         switch tab {
         case .studio: StartTierView()
-        case .library: ComingSoonView(icon: "square.grid.2x2", title: "갤러리", message: "저장된 페르소나 목록은 다음 단계에서 연결됩니다.")
+        case .library: GalleryView()
         case .inspection: ComingSoonView(icon: "checkmark.seal", title: "정밀도", message: "검수 화면은 다음 단계에서 연결됩니다.")
         case .transfer: ComingSoonView(icon: "antenna.radiowaves.left.and.right", title: "기기 연동", message: "주고받기 화면은 다음 단계에서 연결됩니다.")
         }

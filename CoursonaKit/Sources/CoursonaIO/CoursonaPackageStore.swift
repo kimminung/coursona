@@ -90,13 +90,28 @@ public enum CoursonaPackageStore {
         try? CaptureBundleStore.read(from: folder.appendingPathComponent("capture", isDirectory: true))
     }
 
+    /// 저장된 페르소나 폴더 목록 (최신순, `CaptureBundleStore.list` 와 같은 패턴). 매니페스트만 읽어 빠르다.
+    public static func list(in root: URL? = nil) -> [(folder: URL, manifest: CoursonaManifest)] {
+        let dir = root ?? defaultRoot
+        guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
+        return items.compactMap { folder -> (folder: URL, manifest: CoursonaManifest)? in
+            guard let m = try? readManifest(from: folder) else { return nil }
+            return (folder, m)
+        }
+        .sorted { $0.manifest.createdAt > $1.manifest.createdAt }
+    }
+
+    /// Documents/Personas/
+    public static var defaultRoot: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Personas", isDirectory: true)
+    }
+
     /// 전송·AirDrop 용 zip.
     public static func archive(folder: URL, to url: URL) throws { try ZipArchive.zipFolder(folder).write(to: url) }
     public static func unarchive(_ url: URL, to folder: URL) throws { try ZipArchive.unzip(Data(contentsOf: url), to: folder) }
 
     /// Documents/Personas/<uuid>/
     public static func defaultFolder(for id: UUID) -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("Personas", isDirectory: true).appendingPathComponent(id.uuidString + ".coursona", isDirectory: true)
+        defaultRoot.appendingPathComponent(id.uuidString + ".coursona", isDirectory: true)
     }
 }

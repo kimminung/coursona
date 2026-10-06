@@ -138,6 +138,10 @@ public enum FaceFitter {
 
 /// 두상 전파: 전역 유사변환 + 국소 잔차 RBF(경계 거리 감쇠) + 목 감쇠 + 어깨 스케일 + 대칭.
 public enum HeadPropagator {
+    /// 어깨/목 스케일에 쓰는 눈 간격 비 `s`의 허용 범위. 눈 코너 추적 노이즈로 `s`가 튀어도
+    /// 어깨가 실제 체형과 무관하게 부풀거나(겹침 의심 급증) 꺼지지 않도록 한다.
+    public static let shoulderScaleRange: ClosedRange<Float> = 0.8...1.3
+
     public static func propagate(template t: BustTemplate, userPatch: [SIMD3<Float>], scale s: Float, options: FitOptions)
         throws -> (positions: [SIMD3<Float>], lambda: Double, pivotRatio: Double) {
         let pc = t.patchCount
@@ -146,15 +150,16 @@ public enum HeadPropagator {
 
         // (a) 전역 유사변환: 템플릿 패치 → 사용자 패치
         let S = Procrustes.fit(source: templatePatch, target: userPatch, allowScale: true) ?? .identity
+        let shoulderScale = min(shoulderScaleRange.upperBound, max(shoulderScaleRange.lowerBound, s))
         let shoulders = Set(t.manifest.group(.shoulders))
         let neck = Set(t.manifest.group(.neck))
         var base = t.positions
         for i in base.indices {
             if shoulders.contains(i) {
-                base[i] = SIMD3(base[i].x * s, base[i].y, base[i].z * s)     // 어깨: 가로·앞뒤 스케일만
+                base[i] = SIMD3(base[i].x * shoulderScale, base[i].y, base[i].z * shoulderScale)     // 어깨: 가로·앞뒤 스케일만 (범위 제한)
             } else if neck.contains(i) {
                 let w = neckWeight(y: base[i].y, options: options)
-                let sc = SIMD3(base[i].x * s, base[i].y, base[i].z * s)
+                let sc = SIMD3(base[i].x * shoulderScale, base[i].y, base[i].z * shoulderScale)
                 base[i] = S.apply(base[i]) * w + sc * (1 - w)
             } else {
                 base[i] = S.apply(base[i])

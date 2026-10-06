@@ -1,4 +1,4 @@
-//
+ //
 //  PhotoCaptureSession.swift
 //  CoursonaCapture
 //
@@ -57,19 +57,22 @@ public struct PhotoFrameStatus: Sendable, Equatable {
 
 /// 희소 캡처 게이트.
 public struct PhotoCaptureGate: Sendable, Equatable {
-    /// ARKit 경로(`CaptureGate`)와 같은 이유로 19차에 ±8/±7 → ±12/±10 (Vision 자세는 ARKit 보다 노이즈가 커 조금 더 좁게 둔다).
-    public var yawTolerance: Float = 12
-    public var pitchTolerance: Float = 10
+    /// ARKit 경로(`CaptureGate`)와 같은 이유로 19차에 ±8/±7 → ±12/±10 → 20차 ±18/±14 (Vision 자세는 ARKit 보다 노이즈가 커 ARKit 경로보다 조금 더 좁게 둔다).
+    public var yawTolerance: Float = 18
+    public var pitchTolerance: Float = 14
     public var brightnessRange: ClosedRange<Float> = 0.22...0.85
     public var minFaceWidthRatio: Float = 0.16
     public var framesToAverage = 8
     public var holdSeconds: Double = 0.5
-    /// 선택 컷(C3·F7) 임계값 — TechPRD §6.3: 눈 감기 `종횡비 < 0.12`, 입 벌림 `안쪽/바깥 입술 폭 > 0.25`.
-    public var eyesClosedMaxAspect: Float = 0.12
-    public var mouthOpenMinRatio: Float = 0.25
-    /// T-302: 캡처 품질 점수 ≥ 0.5(TechPRD §6.3), 얼굴 상자 인물 매트 비율 ≥ 0.6(그리드 샘플 대부분이 사람으로 분류돼야 함).
+    /// 선택 컷(C3·F7) 임계값 — TechPRD §6.3: 눈 감기 `종횡비 < 0.12`, 입 벌림 `안쪽/바깥 입술 폭 > 0.25`. 20차: ARKit 경로와 같은
+    /// 이유로 완화(0.12→0.17 · 0.25→0.18).
+    public var eyesClosedMaxAspect: Float = 0.17
+    public var mouthOpenMinRatio: Float = 0.18
+    /// T-302: 캡처 품질 점수 ≥ 0.5(TechPRD §6.3), 얼굴 상자 인물 매트 비율 ≥ 0.5. 원래 0.6(TechPRD 초안) 이었으나,
+    /// 조명이 한쪽으로 치우치면 그림자 진 쪽 마스크 신뢰도가 떨어져(`PersonCoverage.ratio` 참고 — 원값 평균으로 바꿔도
+    /// 평균 자체가 내려가는 건 못 막는다) 정상적인 단독 인물 사진도 자주 막히는 사용자 피드백으로 20차에 완화.
     public var minCaptureQuality: Float = 0.5
-    public var minPersonCoverage: Float = 0.6
+    public var minPersonCoverage: Float = 0.5
     public init() {}
 }
 
@@ -86,9 +89,10 @@ struct PhotoFaceAnalysis: Sendable {
     /// 선택 컷 게이트용(C3·F7) — `PhotoFrameStatus` 와 같은 정의.
     var eyeAspectRatio: Float
     var mouthOpenRatio: Float
-    /// T-302 — `PhotoFrameStatus` 와 같은 정의.
-    var captureQualityScore: Float
-    var personCoverage: Float
+    /// T-302 — `PhotoFrameStatus` 와 같은 정의. `nil` = 이 프레임은 비싼 Vision 요청(아래 `analyze(scoreQuality:)`)을
+    /// 건너뛰었다는 뜻 — `ingest` 가 직전 값을 그대로 들고 간다.
+    var captureQualityScore: Float?
+    var personCoverage: Float?
     /// T-602 — `PhotoFrameStatus` 와 같은 정의.
     var eyeAspectRatioLeft: Float
     var eyeAspectRatioRight: Float
@@ -207,18 +211,26 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         let ci = CIImage(cvPixelBuffer: pb)
         guard let cg = Self.sharedContext.createCGImage(ci, from: ci.extent) else { busy.release(); return }
         let flag = busy
+        let scoreQuality = throttle.shouldRunExpensive()
         Task.detached(priority: .userInitiated) { [weak self] in
             defer { flag.release() }
-            let analysis = try? await Self.analyze(cg)
+            let analysis = try? await Self.analyze(cg, scoreQuality: scoreQuality)
             guard let strong = self else { return }
             await MainActor.run { strong.ingest(image: cg, analysis: analysis) }
         }
     }
 
     nonisolated static let sharedContext = CIContext(options: [.cacheIntermediates: false])
+    /// 트루뎁스가 없는 환경(Mac 카메라)에서는 라이브 게이트가 전적으로 이 Vision 파이프라인 속도에 달려 있다.
+    /// `DetectFaceCaptureQualityRequest`·`GeneratePersonSegmentationRequest` 둘은 랜드마크 검출보다 훨씬 느려서
+    /// (실측 체감: 매 프레임 돌리면 각도·표정 링이 한 박자씩 늦게 따라온다) 매 프레임이 아니라 3프레임에 한 번만
+    /// 돌린다 — 각도·표정처럼 매 프레임 반응해야 하는 신호(랜드마크 기반)는 그대로 매 프레임 돈다.
+    private let throttle = FrameThrottle(interval: 3)
 
     /// CGImage 한 장을 Vision 으로 분석한다 (카메라 프레임·사진 파일 공용). 얼굴이 없으면 nil.
-    nonisolated static func analyze(_ cg: CGImage) async throws -> PhotoFaceAnalysis? {
+    /// `scoreQuality`: 캡처 품질 점수·인물 매트(둘 다 느림)를 이번 호출에서 계산할지. false 면 `nil` 로 돌려주고
+    /// `ingest` 가 직전 값을 그대로 쓴다 — 사진 파일 1장(`makeShot(from:)`·`PhotoSuitability`)은 항상 true.
+    nonisolated static func analyze(_ cg: CGImage, scoreQuality: Bool = true) async throws -> PhotoFaceAnalysis? {
         let req = DetectFaceLandmarksRequest(.revision3)   // 76점 고정 (template.json 랜드마크 대응 인덱스 안정)
         let faces = try await req.perform(on: cg)
         // 가장 큰 얼굴 하나
@@ -255,14 +267,26 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
             let gxR = (rp.x - rightEyeC.x) / (rightEyeBox.w / 2), gyR = (rp.y - rightEyeC.y) / (rightEyeBox.h / 2)
             gazeX = (gxL + gxR) / 2; gazeY = (gyL + gyR) / 2
         }
-        // T-302: 캡처 품질 점수. 실패해도(예: 얼굴이 이미 사라짐) 이 게이트만 통과시킨다 — 다른 값은 이미 다 구했다.
-        let qualityScore = (try? await DetectFaceCaptureQualityRequest().perform(on: cg).first?.captureQuality?.score) ?? 1
-        // T-302: 얼굴 상자 안 인물 매트 비율. `pixel(at:)` 만 OS 26 에서 되고 전체 매트(`pixelBuffer`)는 OS 27+ 라
-        // 그리드 샘플링으로 "이 상자가 실제로 사람인가" 만 본다 — `PersonCoverage.swift` 머리말 참고.
-        var coverage: Float = 1
-        if let seg = try? await GeneratePersonSegmentationRequest().perform(on: cg) {
-            coverage = PersonCoverage.ratio(faceBoxImageCoords: box) { point in
-                seg.pixel(at: NormalizedPoint(imagePoint: point, in: size))
+        // T-302: 캡처 품질 점수 · 인물 매트 비율. 그리드 샘플링으로 "이 상자가 실제로 사람인가" 만 본다
+        // (`pixel(at:)` 만 OS 26 에서 되고 전체 매트는 OS 27+ 라 — `PersonCoverage.swift` 머리말 참고).
+        // 매 프레임 돌리기엔 느려 `scoreQuality` 일 때만 계산하고(throttle, `captureOutput` 참고), 아니면 nil —
+        // 실패해도(예: 얼굴이 이미 사라짐) 이 게이트만 통과시킨다, 다른 값은 이미 다 구했다.
+        var qualityScore: Float? = nil, coverage: Float? = nil
+        if scoreQuality {
+            qualityScore = (try? await DetectFaceCaptureQualityRequest().perform(on: cg).first?.captureQuality?.score) ?? 1
+            if let seg = try? await GeneratePersonSegmentationRequest().perform(on: cg) {
+                // `box`(와 여기 들어오는 `point`)는 `toImageCoordinates(origin: .upperLeft)` 로 만든 좌상단 원점
+                // 좌표다. 반면 `NormalizedPoint(imagePoint:in:)` 는 전달한 점을 그대로(flip 없이) x/width·y/height 로
+                // 정규화하는데, `pixel(at:)`/`ImageProcessingRequest.regionOfInterest` 가 문서화한 Vision 규약은
+                // **좌하단 원점**이다 — 즉 Y 를 미리 뒤집어 주지 않으면 세로축이 통째로 뒤집힌 위치를 샘플링하게 된다
+                // (RunCodeSnippet 으로 실측 확인: 뒤집지 않으면 이미지 위쪽 점이 normalized y≈0.05 로 나와 Vision 의
+                // "위쪽 = y 1" 규약과 반대). `brightness(_:in:)` 가 이미 같은 이유로 수동 flip 하는 것과 같은 패턴.
+                coverage = PersonCoverage.ratio(faceBoxImageCoords: box) { point in
+                    let flipped = CGPoint(x: point.x, y: CGFloat(size.height) - point.y)
+                    return seg.pixel(at: NormalizedPoint(imagePoint: flipped, in: size))
+                }
+            } else {
+                coverage = 1
             }
         }
         return PhotoFaceAnalysis(points: px(lm.allPoints), keyPoints: key, box: box, pose: pose, visionYawPitch: SIMD2(vy, vp),
@@ -304,11 +328,12 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         previewBox = a.box
         previewKeyPoints = a.keyPoints
         let b = Self.brightness(image, in: a.box)
+        // 품질 점수·인물 매트는 throttle 로 건너뛴 프레임이면 nil — 직전 값을 그대로 들고 간다(처음이면 통과시키는 기본값 1).
         status = PhotoFrameStatus(isTracked: true, yaw: a.pose.x, pitch: a.pose.y, roll: a.pose.z, visionYaw: a.visionYawPitch.x, visionPitch: a.visionYawPitch.y,
                                   brightness: b, faceWidthRatio: Float(a.box.width) / Float(max(1, image.width)), landmarkCount: a.points.count,
                                   imageWidth: image.width, imageHeight: image.height, confidence: a.confidence,
                                   eyeAspectRatio: a.eyeAspectRatio, mouthOpenRatio: a.mouthOpenRatio,
-                                  captureQualityScore: a.captureQualityScore, personCoverage: a.personCoverage,
+                                  captureQualityScore: a.captureQualityScore ?? status.captureQualityScore, personCoverage: a.personCoverage ?? status.personCoverage,
                                   eyeAspectRatioLeft: a.eyeAspectRatioLeft, eyeAspectRatioRight: a.eyeAspectRatioRight, mouthWidthRatio: a.mouthWidthRatio,
                                   innerLipsAspect: a.innerLipsAspect, browRaiseLeft: a.browRaiseLeft, browRaiseRight: a.browRaiseRight, gazeX: a.gazeX, gazeY: a.gazeY)
     }
@@ -392,8 +417,10 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         if kind == .eyesClosed, status.eyeAspectRatio > gate.eyesClosedMaxAspect { return (false, "눈을 감아 주세요") }
         if kind == .mouthOpen, status.mouthOpenRatio < gate.mouthOpenMinRatio { return (false, "입을 더 벌려 주세요") }
         if !gate.brightnessRange.contains(status.brightness) { return (false, status.brightness < gate.brightnessRange.lowerBound ? "조금 더 밝은 곳으로" : "너무 밝습니다") }
-        // T-302: 캡처 품질 점수·인물 매트.
-        if status.captureQualityScore < gate.minCaptureQuality { return (false, "조금 더 선명하게, 정면에서 찍어 주세요") }
+        // T-302: 캡처 품질 점수·인물 매트. `DetectFaceCaptureQualityRequest` 는 정면·선명도 기준이라 의도적으로
+        // 고개를 돌리는 left·right·up 컷에서는 점수가 구조적으로 낮게 나온다 — "정면에서 찍어 주세요" 라는 문구와도
+        // 모순되므로(이미 고개를 돌리라고 안내 중) 목표 각도가 정면(0,0)인 컷에만 적용한다.
+        if ty == 0, tp == 0, status.captureQualityScore < gate.minCaptureQuality { return (false, "조금 더 선명하게, 정면에서 찍어 주세요") }
         if status.personCoverage < gate.minPersonCoverage { return (false, "얼굴이 배경과 잘 구분되지 않습니다") }
         return (true, "유지하세요")
     }
@@ -410,6 +437,21 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
         #else
         return "iOS 사진 폴백"
         #endif
+    }
+}
+
+/// `interval` 프레임마다 한 번만 true — 비싼 Vision 요청(캡처 품질·인물 분할)의 실행 빈도를 줄인다.
+final class FrameThrottle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private let interval: Int
+    init(interval: Int) { self.interval = interval }
+    func shouldRunExpensive() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        count += 1
+        guard count >= interval else { return false }
+        count = 0
+        return true
     }
 }
 

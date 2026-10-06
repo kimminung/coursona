@@ -179,9 +179,13 @@ public enum SplatBinder {
             let layers = triScalp[tri] ? max(1, o.scalpLayers) : 1
             let p0 = positions[Int(render.indices[tri * 3])], p1 = positions[Int(render.indices[tri * 3 + 1])], p2 = positions[Int(render.indices[tri * 3 + 2])]
             let n0 = normals[Int(render.indices[tri * 3])], n1 = normals[Int(render.indices[tri * 3 + 1])], n2 = normals[Int(render.indices[tri * 3 + 2])]
-            // 외접원 반지름(둔각 삼각형에서도 쓸만한 근사: 변 길이로 공식 r = abc/4K).
+            // 외접원 반지름(r = abc/4K). 이 공식은 삼각형이 둔각으로 찌그러져 넓이 K가 0에 가까워질수록(슬리버)
+            // 변 길이는 그대로인데 반지름만 발산한다 — 특히 `CapBuilder.addingCaps` 가 만드는 경계 팬 삼각형처럼
+            // 가늘고 긴 삼각형 하나만 섞여도 스플랫이 화면을 뒤덮는 거대한 납작 원반이 된다(목·어깨는 `neckShoulderScaleBoost`
+            // 까지 곱해져 더 심해진다 — 실측: UFO/차양 모양 과대 스플랫). 어떤 삼각형이든 "이 삼각형을 대충 덮는 스플랫"은
+            // 가장 긴 변보다 클 필요가 없으므로 그 값으로 clamp한다.
             let lab = simd_length(p1 - p0), lbc = simd_length(p2 - p1), lca = simd_length(p0 - p2)
-            let circumR = max(1e-5, (lab * lbc * lca) / max(1e-9, 4 * a))
+            let circumR = min(max(lab, lbc, lca), max(1e-5, (lab * lbc * lca) / max(1e-9, 4 * a)))
             let majorScale = circumR * o.majorScaleFactor * (triNeck[tri] || triShoulders[tri] ? o.neckShoulderScaleBoost : 1)
             let scale = SIMD3<Float>(majorScale, majorScale, majorScale * o.minorScaleRatio)
             let baseOpacity: Float = (ring[tri] ?? .max) <= o.rimRings ? o.rimOpacity : o.skinOpacity
