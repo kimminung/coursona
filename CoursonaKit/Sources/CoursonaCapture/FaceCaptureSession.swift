@@ -105,6 +105,14 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
     private var recentWeights: [ArkitWeights] = []
     private var latestFrame: ARFrame?
     private var latestAnchor: ARFaceAnchor?
+    /// 디버깅 체크(2026-10-08, 실기기 실측): `session(_:didUpdate:)` 가 들어오는 모든 프레임마다 무조건
+    /// `Task { @MainActor in … }` 을 새로 만들어 `frame` 을 캡처해 두면, 메인 액터가 그 처리 속도를 못 따라갈 때
+    /// (얼굴면 텍스처·에셋 부착처럼 메인 액터가 바쁠 때 특히) 아직 실행 안 된 Task 들이 각자 자기 `ARFrame` 을 쥔 채
+    /// 쌓인다 — 실측으로 "ARSession 델리게이트가 ARFrame 11~12개를 쥐고 있다" 경고 + 카메라 픽셀 버퍼 풀 고갈로
+    /// `CVPixelBufferCreate` 가 매번 실패하는 걸 직접 확인했다(Apple 문서가 말하는 "델리게이트의 스레딩·메모리 관리
+    /// 문제"가 정확히 이것). 이미 있던 `previewBusy`/`probeOnce` 와 같은 패턴으로, 이전 프레임의 메인 액터 처리가
+    /// 아직 안 끝났으면 이번 프레임은 조용히 버린다(ARKit 은 곧 다음 프레임을 또 보내 주므로 추적 품질에는 영향 없다).
+    private let frameUpdateBusy = BusyFlag()
     /// 마지막으로 깊이 프레임을 본 시각. TrueDepth 깊이는 색 프레임과 주기가 달라 자주 nil 이라 "한동안 없음" 일 때만 경고한다.
     private var lastDepthSeen = Date.distantPast
     /// 최근 깊이 맵 (세로 회전 완료). 촬영 순간 프레임에 깊이가 없으면 이걸 쓴다.
@@ -187,7 +195,9 @@ public final class FaceCaptureSession: NSObject, ARSessionDelegate {
         let depthNow = hasDepth ? Self.convertDepth(frame.capturedDepthData) : nil
         // T-007 프로브는 첫 프레임 한 번만 (삼각형 해시 계산을 매 프레임 하지 않는다)
         let report: ARFaceProbeReport? = probeOnce.tryAcquire() ? Self.makeProbe(frame: frame, anchor: anchor) : nil
+        guard frameUpdateBusy.tryAcquire() else { return }   // 이전 프레임이 메인 액터에서 아직 처리 중 — 이번 건 버린다(위 주석)
         Task { @MainActor in
+            defer { self.frameUpdateBusy.release() }
             self.latestFrame = frame
             self.latestAnchor = anchor
             self.recentVertices.append(verts)
