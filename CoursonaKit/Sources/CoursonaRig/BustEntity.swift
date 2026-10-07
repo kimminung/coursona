@@ -287,6 +287,22 @@ public final class BustEntity {
         lastUpdateMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
         updateCount += 1
         updateMouthInner(weights)
+        updateMouthCapFallbackVisibility(jawOpen: weights[.jawOpen])
+    }
+
+    /// 입 캡(`CapBuilder`가 만든 마개)은 `jawOpen` 셰이프에서 "테두리는 제 델타로, 캡 안쪽은 전부 테두리 평균
+    /// 델타로" 보간(`CapBuilder.swift`) 때문에 입을 크게 벌리면 부채꼴이 뒤집히며 자기교차한다 — 뒤집힌 삼각형은
+    /// `faceCulling = .back` 때문에 번갈아 안 보여 이빨처럼 보인다(실기기 재현, 2026-10-07, `FaceEntity`/얼굴면만
+    /// 버전에서 먼저 확인). `mouthInner`(진짜 치아 메시)가 붙어 있으면 `setCapsHidden(mouth: true)` 가 이미 캡을
+    /// 영구히 숨겨 뒀으니 이 폴백은 손대지 않는다 — `EyesMouth.usdz` 가 제대로 된 치아를 붙여 주지 못할 때만
+    /// (오늘 기준 항상 그렇다 — `attachEyesMouth` 머리말의 "Eye_L/Mouth_Inner 는 지오메트리 없는 조인트" 참고)
+    /// 입을 벌리면 캡을 통째로 숨겨 "입 안에 아무것도 없어" 보이게 한다.
+    private func updateMouthCapFallbackVisibility(jawOpen: Float) {
+        guard mouthInner == nil, let i = mouthCapMaterialIndex, var mc = model.components[ModelComponent.self],
+              i < mc.materials.count, var pbr = mc.materials[i] as? PhysicallyBasedMaterial else { return }
+        pbr.blending = jawOpen > 0.05 ? .transparent(opacity: .init(floatLiteral: 0)) : .opaque
+        mc.materials[i] = pbr
+        model.components[ModelComponent.self] = mc
     }
 
     // MARK: 눈알·입안 엔티티 (EyesMouth.usdz, 입체감 v2)

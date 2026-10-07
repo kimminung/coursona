@@ -241,7 +241,11 @@ public final class PhotoCaptureSession: NSObject, AVCaptureVideoDataOutputSample
                                                lipsOuter: px(lm.outerLips), contour: px(lm.faceContour))
         let vy = Float(f.yaw.converted(to: .degrees).value), vp = Float(f.pitch.converted(to: .degrees).value), vr = Float(f.roll.converted(to: .degrees).value)
         let pose = SparseFaceGeometry.pose(visionYaw: vy, visionPitch: vp, visionRoll: vr, keyPoints: key)
-        let box = f.boundingBox.toImageCoordinates(size, origin: .upperLeft)
+        // Vision 의 정규화 상자는 얼굴이 프레임 가장자리에 걸리면 [0,1] 밖으로(추정치) 나갈 수 있다 — 클램프
+        // 안 하면 `PersonCoverage.ratio` 가 그 상자 안을 그리드 샘플링할 때 이미지 밖 좌표가 나오고, 뒤집은 뒤
+        // `pixel(at:)` 에 넘기는 정규화 좌표가 [0,1] 밖으로 나가 Vision 내부에서 트랩(EXC_BREAKPOINT)이 난다
+        // (실기기 재현: 맥 웹캠 프레임, box.maxY 가 이미지 높이를 넘어섬).
+        let box = f.boundingBox.toImageCoordinates(size, origin: .upperLeft).intersection(CGRect(origin: .zero, size: size))
         // 선택 컷 게이트(C3·F7): 눈 종횡비(높이/폭 평균) · 입 벌림(안쪽 입술 높이 / 바깥 입술 폭).
         func bbox(_ pts: [SIMD2<Float>]) -> (w: Float, h: Float) {
             guard let x0 = pts.map(\.x).min(), let x1 = pts.map(\.x).max(), let y0 = pts.map(\.y).min(), let y1 = pts.map(\.y).max() else { return (0, 0) }
