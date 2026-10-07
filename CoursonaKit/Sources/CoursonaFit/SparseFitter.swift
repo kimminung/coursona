@@ -38,6 +38,12 @@ public enum SparseFitter {
     /// 템플릿 표면에서 수십 cm~수 m 떨어진 값을 내놓을 수 있다 — RBF 중심값이 그만큼 크면 주변까지 뾰족하게 당겨
     /// 흉상에 바늘 같은 돌기가 생긴다(겹침 의심 폭증과 함께 관측됨). `SilhouetteFitter.maxPull` 과 같은 이유의 clamp.
     static let maxLandmarkDisplacement: Float = 0.03
+    /// RBF 전파 뒤 정점 하나가 움직일 수 있는 상한(m). 중심값이 모두 `maxLandmarkDisplacement` 안이어도 중심이 적고 거의 한 평면에
+    /// 놓이면(눈꼬리 4 + 코끝만 남은 경우) 보간이 중심 사이에서 수십 cm 를 튀어 머리 전체가 화면 밖으로 날아간다 — 그 어떤 경우에도
+    /// 템플릿에서 이 이상 벗어나지 않게 막는 마지막 안전망.
+    static let maxWarpDisplacement: Float = 0.045
+    /// RBF 피벗비가 이보다 크면 λ 를 올려 다시 푼다(정상 8점 피팅은 ~1e2, 폭주한 5점 피팅은 ~1e7 로 관측).
+    static let maxPivotRatio: Double = 1e6
 
     /// 컷 하나의 자세 정렬 + 랜드마크 광선 (템플릿 공간). 여러 컷을 합칠 때 쓴다.
     struct ShotCorrespondence {
@@ -130,9 +136,12 @@ public enum SparseFitter {
         struct Term { var dir: SIMD3<Float>; var origin: SIMD3<Float>; var weight: Float }
         var byVertex: [Int: (name: String, terms: [Term])] = [:]
         let templateNormals = Geometry.vertexNormals(positions: t.positions, indices: t.indices)
+        // 관측은 됐지만 시선 가중치에서 모두 버려진 랜드마크(카메라가 아래에서 올려다본 컷의 턱·입꼬리 등)도 기억해 둔다 — 아래서 앵커로 쓴다.
+        var observed: [Int: String] = [:]
         for corr in perShot {
             for (v, dir, name) in corr.rays {
                 guard v < templateNormals.count else { continue }
+                observed[v] = name
                 let w = max(0, simd_dot(templateNormals[v], -dir))
                 guard w >= minViewWeight else { continue }
                 byVertex[v, default: (name, [])].terms.append(Term(dir: dir, origin: corr.cameraOriginT, weight: w))
@@ -155,7 +164,8 @@ public enum SparseFitter {
             if dl > maxLandmarkDisplacement { disp *= maxLandmarkDisplacement / dl }
             centers.append(P); values.append(disp); names.append(entry.name)
         }
-        guard centers.count >= minLandmarks else { throw FitError.sparseInsufficientLandmarks(centers.count) }
+        let landmarksUsed = centers.count
+        guard landmarksUsed >= minLandmarks else { throw FitError.sparseInsufficientLandmarks(landmarksUsed) }
 
         // 3b) 좌우 대칭 보정 (한 장/적은 장수 사진의 비대칭은 대부분 Vision 잡음). 좌/우 짝은 거울 평균, 가운데 랜드마크는 x 성분을 줄인다.
         if options.symmetry > 0 {
@@ -175,19 +185,40 @@ public enum SparseFitter {
             values = out
         }
 
-        // 4) 3D RBF 전파 (+ 감쇠 · 목)
-        guard let rbf = BiharmonicRBF(centers: centers, values: values, lambda: options.rbfLambda) else { throw FitError.rbfFailed }
+        // 3c) 앵커: 관측됐지만 시선 가중치로 전부 버려진 랜드마크는 변위 0 으로 중심에 넣는다. 남은 중심이 눈꼬리 4 + 코끝뿐이면
+        //     거의 한 평면이라 RBF 의 1차 다항식 블록이 특이해져(피벗비 1e7) 머리가 0.5 m 날아가는 게 실측됐다 — 앵커가 그 평면을 깨 준다.
+        //     (대칭 보정 뒤에 넣어 앵커는 정말 템플릿 자리에 고정되게 한다.)
+        var anchored: [String] = []
+        for (v, name) in observed where byVertex[v] == nil {
+            centers.append(t.positions[v]); values.append(.zero); names.append(name); anchored.append(name)
+        }
+
+        // 4) 3D RBF 전파 (+ 감쇠 · 목). 피벗비가 크면 λ 를 올려 다시 푼다(BiharmonicRBF 자체는 1e12 까지 허용하는데 그건 너무 늦다).
+        var lambda = options.rbfLambda
+        var solved = BiharmonicRBF(centers: centers, values: values, lambda: lambda)
+        while let r = solved, r.pivotRatio > maxPivotRatio, lambda < 1 {
+            lambda = lambda == 0 ? 1e-3 : lambda * 10
+            solved = BiharmonicRBF(centers: centers, values: values, lambda: lambda)
+        }
+        guard let rbf = solved else { throw FitError.rbfFailed }
         let shoulders = Set(t.manifest.group(.shoulders))
         let neck = Set(t.manifest.group(.neck))
         let sigma2 = falloffSigma * falloffSigma
-        func warp(_ p: SIMD3<Float>) -> SIMD3<Float> {
+        /// 변위와 "상한에 걸렸는가". 마지막 안전망: 어떤 수치 사고가 나도 정점 하나가 템플릿에서 maxWarpDisplacement 이상 벗어나지 않게.
+        func warp(_ p: SIMD3<Float>) -> (SIMD3<Float>, clamped: Bool) {
             var dmin = Float.greatestFiniteMagnitude
             for c in centers { dmin = min(dmin, simd_length_squared(p - c)) }
-            return rbf.evaluate(p) * exp(-dmin / sigma2)
+            var v = rbf.evaluate(p) * exp(-dmin / sigma2)
+            let len = simd_length(v)
+            if !len.isFinite { return (.zero, true) }
+            if len > maxWarpDisplacement { v *= maxWarpDisplacement / len; return (v, true) }
+            return (v, false)
         }
+        var clampedCount = 0
         var d = [SIMD3<Float>](repeating: .zero, count: t.vertexCount)
         for i in 0..<t.vertexCount where !shoulders.contains(i) {
-            var v = warp(t.positions[i])
+            var (v, clamped) = warp(t.positions[i])
+            if clamped { clampedCount += 1 }
             if neck.contains(i) { v *= HeadPropagator.neckWeight(y: t.positions[i].y, options: options) }
             d[i] = v
         }
@@ -195,19 +226,23 @@ public enum SparseFitter {
         for i in positions.indices { positions[i] += d[i] }
 
         // 5) 눈알
-        let eyeL = m.eyeCenterL + warp(m.eyeCenterL), eyeR = m.eyeCenterR + warp(m.eyeCenterR)
+        let eyeL = m.eyeCenterL + warp(m.eyeCenterL).0, eyeR = m.eyeCenterR + warp(m.eyeCenterR).0
 
         var q = FitQuality(patchRMS: 0, patchRMSPerShot: [:], silhouetteResidualMedian: nil,
                            rbfLambda: rbf.lambda, rbfPivotRatio: rbf.pivotRatio, shotsUsed: perShot.count, elapsedSeconds: Date().timeIntervalSince(start))
         q.method = "sparse"
-        q.landmarksUsed = centers.count
+        q.landmarksUsed = landmarksUsed
         q.eyeFit = "manifest"
         let maxDisp = values.reduce(Float(0)) { max($0, simd_length($1)) }
         let avgReproj = perShot.map(\.reprojRMSpx).reduce(0, +) / Float(perShot.count)
         let kinds = perShot.map(\.kind.title).joined(separator: "+")
-        q.notes = String(format: "희소 피팅(%@, 컷 %d개: %@). 스케일은 1 로 고정 — 단안 사진은 절대 크기를 알 수 없다. 랜드마크 변위 최대 %.1f mm · 재투영 평균 %.2f px",
-                         perShot.first?.intrinsicsEstimated == true ? "intrinsics 가정 FOV" : "intrinsics 센서값",
-                         perShot.count, kinds, maxDisp * 1000, avgReproj)
+        var notes = String(format: "희소 피팅(%@, 컷 %d개: %@). 스케일은 1 로 고정 — 단안 사진은 절대 크기를 알 수 없다. 랜드마크 변위 최대 %.1f mm · 재투영 평균 %.2f px",
+                           perShot.first?.intrinsicsEstimated == true ? "intrinsics 가정 FOV" : "intrinsics 센서값",
+                           perShot.count, kinds, maxDisp * 1000, avgReproj)
+        if !anchored.isEmpty { notes += " · 시선 밖 랜드마크 \(anchored.count)개(\(anchored.joined(separator: ","))) 템플릿 자리에 고정" }
+        if lambda != options.rbfLambda { notes += String(format: " · 피벗비 과대 → λ %.0e 로 재풀이", lambda) }
+        if clampedCount > 0 { notes += " · 워프 상한(\(Int(maxWarpDisplacement * 1000)) mm) 적용 정점 \(clampedCount)개" }
+        q.notes = notes
         return Identity(templateID: m.id, templateVersion: m.version, positions: positions, scale: 1,
                         eyeCenterL: eyeL, eyeCenterR: eyeR, eyeRadius: m.eyeRadius, patchDeltas: [:], quality: q)
     }

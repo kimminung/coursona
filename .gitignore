@@ -38,3 +38,6 @@ Fixtures/*.chosangcapture
 # 편집기
 .vscode/
 .idea/
+
+# 블렌더 헤드리스 작업 폴더(.blend 복사본·내보내기 산출물) — 리포에 넣지 않는다
+.blender_work/

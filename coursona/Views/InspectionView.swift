@@ -50,8 +50,16 @@ struct InspectionView: View {
     @State private var dragStartYaw: Float = 0
     /// 입체감 v2 — Soban식 자동 움직임(숨·고개·깜빡임·시선)과 입모양 입력(마이크 / 한글 텍스트).
     @State private var motionOn = true
+    /// 유령 룩(D-308) — 디자인 PRD 의 기본 룩. 텍스처가 올라간 뒤 `.task` 에서 켠다(셰이더가 없으면 자동으로 꺼진다).
+    @State private var ghostLookOn = false
     @State private var micOn = false
     @State private var speechText = ""
+
+    /// `dragYaw`(라디안)를 도 단위 슬라이더에 묶는다. 슬라이더로 바꾼 값은 다음 드래그의 시작점이 된다.
+    private var yawDegrees: Binding<Double> {
+        Binding(get: { Double(dragYaw) * 180 / .pi },
+                set: { dragYaw = Float($0) * .pi / 180; dragStartYaw = dragYaw })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -83,7 +91,21 @@ struct InspectionView: View {
                 }
                 .pickerStyle(.segmented)
 
+                // 드래그와 같은 yaw 를 숫자로 — 각도별 점검(5° 단위)·접근성 조작용. 드래그는 이 값을 이어서 돌린다.
+                HStack(spacing: 8) {
+                    Text("회전").font(.caption).foregroundStyle(.secondary)
+                    Slider(value: yawDegrees, in: -90...90, step: 5)
+                        .accessibilityLabel("회전 각도")
+                    Text("\(Int((dragYaw * 180 / .pi).rounded()))°")
+                        .font(.caption.monospacedDigit()).frame(width: 40, alignment: .trailing)
+                }
+
                 Toggle("움직임(숨·고개·깜빡임·시선)", isOn: $motionOn)
+
+                Toggle("유령 룩(반투명·가장자리 소멸·하단 페이드)", isOn: $ghostLookOn)
+                    .onChange(of: ghostLookOn) { _, on in
+                        if !holder.setGhostLook(on) && on { ghostLookOn = false }
+                    }
 
                 Toggle("마이크로 입모양", isOn: $micOn)
                     .onChange(of: micOn) { _, on in holder.setMic(on) }
@@ -125,8 +147,11 @@ struct InspectionView: View {
                 waited += 1
             }
             await holder.applyTexture(package.albedo)
-            // 입체감 v2: 눈알·입안(`EyesMouth.usdz`) — 텍스처 다음에(캡이 투명해지며 그 자리를 채운다).
-            await holder.attachEyesMouth(albedo: package.albedo)
+            // 디자인 PRD 기본 룩 — 셰이더가 없으면 false 가 돌아와 토글도 꺼진 채로 남는다.
+            ghostLookOn = holder.setGhostLook(true)
+            // Persona 재현 에셋(Tasks.md D 절): coursona_assets.json 이 있으면 Template.usdz 의 헤어·셔츠·눈·입을,
+            // 없으면(옛 템플릿) EyesMouth.usdz 경로 — 텍스처 다음에(캡이 투명해지며 그 자리를 채운다).
+            await holder.attachPersonaAssets(package: package)
         }
         .onDisappear { holder.setMic(false) }
     }
@@ -228,13 +253,19 @@ private final class InspectionHolder {
         textureApplied = true
         guard let tex = try? await TextureResource(image: cg, withName: "coursona-albedo-\(ObjectIdentifier(bust).hashValue)",
                                                     options: .init(semantic: .color)) else { return }
-        guard var mc = bust.model.components[ModelComponent.self], !mc.materials.isEmpty else { return }
-        var mat = PhysicallyBasedMaterial()
-        mat.baseColor = .init(texture: .init(tex))
-        mat.roughness = .init(floatLiteral: 0.55)
-        mat.metallic = .init(floatLiteral: 0)
-        mc.materials[0] = mat
-        bust.model.components[ModelComponent.self] = mc
+        // 피부 머티리얼은 BustEntity 가 관리한다(유령 룩 셰이더가 켜져 있으면 그 위에 다시 입힌다 — D-308).
+        bust.setSkinTexture(tex)
+    }
+
+    /// 유령 룩(디자인 PRD 룩·렌더링 원칙, Tasks.md D-308 ③): 흉상 피부를 반투명(0.85) + 프레넬 가장자리 소멸 + 하단 페이드로.
+    /// 셰이더가 없는 환경(OS 26 metallib 미포함 등)이면 false 를 돌려주고 PBR 그대로 둔다.
+    @discardableResult
+    func setGhostLook(_ on: Bool) -> Bool {
+        guard let bust else { return false }
+        // 기본 불투명도는 1 — 검은 무대에서는 0.85 가 "반투명" 이 아니라 그냥 15% 어두워 보일 뿐이다(실측). 유령 느낌은
+        // 프레넬 가장자리 소멸 + 하단 페이드가 낸다. 밝은 배경을 쓰게 되면 0.85 로 내린다(디자인 PRD D-308 ③).
+        // 하단 페이드 14 cm: 셔츠 페이드(height01 0→0.18 ≈ 10.8 cm)보다 길게 두어 셔츠 아래로 흉상 피부 띠가 비치지 않게(실측 2026-10-07).
+        return bust.setGhostLook(on, fresnel: 0.6, baseOpacity: 1, fadeHeight: 0.14)
     }
 
     /// 매 프레임 구동은 `FaceRigSystem`(ECS, `CoursonaApp.init` 에서 등록)이 맡는다 — 여기서는 그 컴포넌트의
@@ -286,14 +317,37 @@ private final class InspectionHolder {
         }
     }
 
-    /// 눈알·입안(`EyesMouth.usdz`) 로드 → `BustEntity.attachEyesMouth`. 템플릿 캐시 확인은 디스크를 건드리므로 메인 밖에서.
-    func attachEyesMouth(albedo: RGBAImage?) async {
-        guard let bust, !bust.hasEyesMouth else { return }
-        guard let folder = try? await Task.detached(priority: .userInitiated, operation: { try TemplateStore.prepareDefault() }).value,
-              let url = TemplateStore.eyesMouthURL(in: folder),
-              let loaded = try? await Entity(contentsOf: url) else { return }
+    private var assetsAttached = false
+
+    /// Persona 재현 에셋(D 절): `coursona_assets.json` + Template.usdz → `BustEntity.attachPersonaAssets`. 매니페스트가 없는
+    /// 옛 템플릿은 `EyesMouth.usdz` → `attachEyesMouth` 폴백. 템플릿 캐시 확인은 디스크를 건드리므로 메인 밖에서.
+    /// 머리색은 패키지 매니페스트 `hairTint`(T-704, 없으면 레퍼런스 갈색), 홍채색은 알베도에서 추정.
+    func attachPersonaAssets(package: CoursonaPackage) async {
+        guard let bust, !bust.hasEyesMouth, !assetsAttached else { return }
+        assetsAttached = true
+        guard let folder = try? await Task.detached(priority: .userInitiated, operation: { try TemplateStore.prepareDefault() }).value else { return }
+        if let manifest = TemplateStore.loadAssetManifest(from: folder), let usdz = TemplateStore.templateUSDZURL(in: folder) {
+            guard let root = try? await Entity(contentsOf: usdz) else { print("[코르소나] Template.usdz 로드 실패"); return }
+            // Template.usdz 에 없는 프림(라이브러리 오브젝트)은 library/<prim>.usdz 를 같은 루트 아래에 붙여 한 번에 찾게 한다.
+            for (_, entry) in manifest.assets where root.findEntity(named: entry.prim) == nil {
+                guard let libURL = TemplateStore.libraryUSDZURL(named: entry.prim, in: folder),
+                      let lib = try? await Entity(contentsOf: libURL) else { continue }
+                lib.name = "Library_\(entry.prim)"
+                root.addChild(lib)
+            }
+            var look = PersonaLook()
+            look.presenceEnabled = false   // 턴테이블 검수: 옆·뒤도 봐야 하므로 정적 존재 마스크(정면 외 사라짐)는 끈다
+            if let t = package.manifest.hairTint, t.count == 3 { look.hairTint = SIMD3(t[0], t[1], t[2]) }
+            else if let albedo = package.albedo, let h = bust.estimateHairColor(from: albedo) { look.hairTint = h }   // 옛 패키지(hairTint 없음)
+            if let albedo = package.albedo { look.irisColor = bust.estimateIrisColor(from: albedo) }
+            print("[코르소나] Persona 룩: 머리 틴트 \(look.hairTint) · 홍채 \(String(describing: look.irisColor))")
+            let report = await bust.attachPersonaAssets(from: root, manifest: manifest, texturesFolder: TemplateStore.texturesFolder(in: folder), look: look)
+            print("[코르소나] Persona 에셋: \(report)")
+            return
+        }
+        guard let url = TemplateStore.eyesMouthURL(in: folder), let loaded = try? await Entity(contentsOf: url) else { return }
         bust.attachEyesMouth(loaded)
-        if let albedo, let iris = bust.estimateIrisColor(from: albedo) { bust.setIrisColor(iris) }
+        if let albedo = package.albedo, let iris = bust.estimateIrisColor(from: albedo) { bust.setIrisColor(iris) }
     }
 }
 

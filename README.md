@@ -131,6 +131,28 @@
 
 **진짜 원인(정정)**: 사용자가 안 보고 있었던 게 아니라 **TrueDepth 깊이 프레임 자체가 2초 안에 안 올 수 있을 만큼 드물다** — 순전히 타이밍 임계값 문제였다. `TierClassifier.detectAutomaticTier`의 `depthTimeout`을 5.0초로 올리고 폴링 간격도 100ms→20ms로 좁혀(드문 프레임을 놓치지 않도록) 재배포 → **실기기에서 연속 2회 A로 정확히 판정**됨을 콘솔 로그로 직접 확인했다. 3플랫폼 + 실기기 빌드 전부 통과.
 
+### Persona 룩 — 블렌더 에셋을 붙인 실제 렌더 (2026-10-08)
+
+디자인 PRD(「Coursona 디자인 PRD — 비전프로 Persona 재현 에셋」)의 헤어·셔츠·눈알·입안 에셋을 **이 리포에서 Blender 5.2 헤드리스로 직접 만들어 내보내고**(`Docs/coursona_blender/`, 초상 `.blend` 사본에서 실행), `Default.coursonatemplate` 에 넣어 Mac 앱이 그린 것이다. 아래는 Mac 카메라(B 등급) 7컷으로 만든 코르소나를 검사 화면에서 그대로 캡처한 것 — 목업이 아니다. 머리색은 사진에서 잰 값(틴트 ÷ 0.63), 셔츠는 네이비 칼라 셔츠(단추·플래킷), 하단은 셰이더 페이드, 눈알·입안은 실제 메시다.
+
+| 레퍼런스(Apple Persona) · 코르소나 정면 · ¾ |
+|---|
+| <img src="Docs/screenshots/d4-persona-reference-compare.png" alt="Apple visionOS Persona 레퍼런스와 코르소나 정면·3/4 뷰 나란히 비교" width="720"> |
+
+| 정면 · −45° · +45° (유령 룩: 프레넬 가장자리 + 하단 페이드) |
+|---|
+| <img src="Docs/screenshots/d4-persona-assets-closeup.png" alt="코르소나 — 헤어·셔츠·눈알·입안 에셋을 붙인 흉상, 세 각도" width="720"> |
+
+| 포즈 5종(무표정·미소·눈 감기·입 벌림·시선) | 눈 감기 — 눈알 깊이 보정 뒤 |
+|---|---|
+| <img src="Docs/screenshots/d4-persona-assets-poses.png" alt="포즈 5종 — 입 벌림에서 윗니와 어두운 입안, 눈 감기에서 닫힌 눈꺼풀" width="520"> | <img src="Docs/screenshots/d4-persona-eye-closure.png" alt="무표정과 눈 감기 — 눈알을 3.5~5 mm 뒤로 밀어 눈꺼풀이 눈알을 덮는다" width="300"> |
+
+| −90° … +90° 5° 간격 37장 |
+|---|
+| <img src="Docs/screenshots/d4-persona-assets-sweep-5deg.png" alt="회전 슬라이더로 5도 간격 촬영한 37장 몽타주" width="720"> |
+
+이 라운드에서 실측으로 잡은 것: 사진 폴백 피팅이 5점만 남아 머리가 0.5 m 날아가던 RBF 퇴화(앵커·λ 재풀이·45 mm clamp), 헤어 카드의 알파 영역이 깊이를 써 뒤의 반투명 흉상이 검게 뚫리던 문제(`discard_fragment`), 라이브러리 USDZ 가 비어 나오던 블렌더 뷰 레이어 제외, 스킨 메시가 아마추어 엔티티로 합쳐져 프림 아래 모델이 없는 RealityKit 동작, 눈을 감아도 눈알이 뚫고 보이던 것(사진 피팅의 눈 둘레 워프 vs 눈알 구면 — 눈을 감은 눈꺼풀 정점이 모두 구면 바깥에 오도록 눈알을 뒤로 밀어 해결). 남은 것과 수치는 `Docs/Tasks.md` D 절.
+
 ## 예상 시나리오 — 등급별 한 걸음씩
 
 아래 화면은 Google Stitch 로 만든 **UI 목업**이다. 실제로 동작하는 앱 화면이 아니라, 테크 PRD·UI 디자인 PRD 를 따라 "이렇게 보일 것"을 미리 그려 본 초안이다. 전체 화면 목록과 각 화면의 상태·문구는 `Docs/UXPRD.md` 에 있다.

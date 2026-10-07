@@ -56,24 +56,30 @@ public final class BustEntity {
     /// 눈·입 구멍을 닫은 결과(T-102, C1 은 템플릿 좌표 v0 — C2 F5/F6 이 피팅 좌표로 다시 닫는다).
     public let capClosure: CapBuildResult
     /// 눈 캡 전용 머티리얼 인덱스(T-604, 있을 때만) — `applyGaze` 가 UV 오프셋을 넣을 자리.
-    private var eyeCapMaterialIndexLeft: Int?
-    private var eyeCapMaterialIndexRight: Int?
-    private var mouthCapMaterialIndex: Int?
+    var eyeCapMaterialIndexLeft: Int?
+    var eyeCapMaterialIndexRight: Int?
+    var mouthCapMaterialIndex: Int?
     /// 시선 UV 오프셋 한계(§6.7 — 홍채 반지름의 절반 근처).
     private let eyeGazeMaxUVOffset: Float = 0.08
 
     // 입체감 v2(2026-10-06): `EyesMouth.usdz`(눈알 2 + 치아·잇몸·혀·입안) 를 붙였을 때의 상태 — `attachEyesMouth` 참고.
     /// 눈알 피벗(회전 중심 = 피팅된 눈 중심). 있으면 `applyGaze` 가 캡 UV 대신 이걸 돌린다.
-    private var eyePivotL: Entity?
-    private var eyePivotR: Entity?
+    var eyePivotL: Entity?
+    var eyePivotR: Entity?
     /// 입안(`Mouth_Inner`) 모델 — `update(weights:)` 가 jawOpen 등 5개 셰이프를 `BlendShapeWeightsComponent` 로 넘긴다.
-    private var mouthInner: ModelEntity?
-    public private(set) var hasEyesMouth = false
+    var mouthInner: ModelEntity?
+    /// `attachEyesMouth`(EyesMouth.usdz) 또는 `attachPersonaAssets`(Template.usdz, D 절)가 눈/입을 붙였는가.
+    public internal(set) var hasEyesMouth = false
     /// 시선 최대 회전(rad) — TechPRD "눈 뼈 look-at 최대 ±25°" 보다 조금 보수적으로.
     private let eyeGazeMaxRadians: Float = 0.35
     /// 템플릿(레스트) 입 루프 중심 — `Mouth_Inner` 를 피팅된 입 위치로 옮길 때의 기준(init 에서 rawTemplate 로 계산).
-    private let restMouthCenter: SIMD3<Float>
-    private let fittedMouthCenter: SIMD3<Float>
+    let restMouthCenter: SIMD3<Float>
+    let fittedMouthCenter: SIMD3<Float>
+
+    // 유령 룩(디자인 PRD 룩·렌더링 원칙, Tasks.md D-308 ③): 피부 머티리얼(0)의 PBR 원본을 보관해 셰이더 ↔ PBR 을 오간다.
+    private var skinPBR: PhysicallyBasedMaterial?
+    public private(set) var ghostLookOn = false
+    private var ghostParams: (fresnel: Float, baseOpacity: Float, fadeHeight: Float) = (0.6, 0.85, 0.08)
 
     public init(template rawTemplate: BustTemplate, identity: Identity? = nil, material: Material? = nil, preferGPU: Bool = true, enableFaceCaps: Bool = true) throws {
         var id = identity ?? Identity.fromTemplate(rawTemplate)
@@ -367,8 +373,48 @@ public final class BustEntity {
         updateMouthInner(lastWeights)
     }
 
+    // MARK: 피부 머티리얼 · 유령 룩 (D-308)
+
+    /// 사진 알베도를 피부 머티리얼(0)에 올린다. 유령 룩이 켜져 있으면 셰이더 머티리얼로 다시 감싼다 — 호출 순서와 무관하게
+    /// 텍스처와 룩이 둘 다 남는다(이전엔 InspectionView 가 PBR 을 통째로 갈아끼워 셰이더가 사라질 수 있었다).
+    public func setSkinTexture(_ texture: TextureResource) {
+        var pbr = skinPBR ?? (model.components[ModelComponent.self]?.materials.first as? PhysicallyBasedMaterial) ?? PhysicallyBasedMaterial()
+        // 틴트는 명시적으로 흰색 — 초기 피부 머티리얼의 살구색 틴트가 남으면 커스텀 셰이더의 base_color_tint() 에 그대로 나온다.
+        pbr.baseColor = .init(tint: .white, texture: .init(texture))
+        pbr.roughness = .init(floatLiteral: 0.55)
+        pbr.metallic = .init(floatLiteral: 0)
+        pbr.faceCulling = .back
+        skinPBR = pbr
+        refreshSkinMaterial()
+    }
+
+    /// 유령 룩: 피부를 기본 불투명도 `baseOpacity` × (1 − fresnel·edge²) × 하단 `fadeHeight`(m) 페이드로 그린다
+    /// (`coursonaPersonaBust` 셰이더). 셰이더가 없는 환경(패키지 테스트·옛 metallib)이면 false — PBR 그대로.
+    @discardableResult
+    public func setGhostLook(_ on: Bool, fresnel: Float = 0.6, baseOpacity: Float = 0.85, fadeHeight: Float = 0.08) -> Bool {
+        if on { guard PersonaSurfaceShader.shared?.bustSurfaceShader != nil else { ghostLookOn = false; return false } }
+        ghostParams = (fresnel, baseOpacity, fadeHeight)
+        ghostLookOn = on
+        if skinPBR == nil { skinPBR = model.components[ModelComponent.self]?.materials.first as? PhysicallyBasedMaterial }
+        refreshSkinMaterial()
+        return true
+    }
+
+    private func refreshSkinMaterial() {
+        guard var mc = model.components[ModelComponent.self], !mc.materials.isEmpty, let pbr = skinPBR else { return }
+        var mat: Material = pbr
+        if ghostLookOn, let shader = PersonaSurfaceShader.shared {
+            // 하단 페이드는 모델 좌표 y 의 바닥(어깨 절단면)에서 fadeHeight 만큼 — LowLevelMesh 좌표는 템플릿 좌표 그대로다.
+            let yMin = basePositions.reduce(Float.greatestFiniteMagnitude) { min($0, $1.y) }
+            if let cm = shader.makeBustMaterial(from: pbr, fresnel: ghostParams.fresnel, fadeY: SIMD2(yMin, yMin + ghostParams.fadeHeight),
+                                                baseOpacity: ghostParams.baseOpacity) { mat = cm }
+        }
+        mc.materials[0] = mat
+        model.components[ModelComponent.self] = mc
+    }
+
     /// 눈·입 캡 머티리얼을 완전 투명으로(또는 되돌림). 캡 지오메트리는 남겨 두어 파트 순서·고스트 슬롯이 그대로다.
-    private func setCapsHidden(eyes: Bool, mouth: Bool) {
+    func setCapsHidden(eyes: Bool, mouth: Bool) {
         guard var mc = model.components[ModelComponent.self] else { return }
         func hide(_ i: Int?) {
             guard let i, i < mc.materials.count, var pbr = mc.materials[i] as? PhysicallyBasedMaterial else { return }
@@ -382,7 +428,7 @@ public final class BustEntity {
 
     /// `Mouth_Inner` 의 5개 셰이프(jawOpen·jawLeft·jawRight·jawForward·tongueOut) — USD 가 중복 이름에 붙인 접미 숫자
     /// (`jawOpen2`) 를 떼고 같은 ARKit 가중치를 넣는다. 흉상의 jawOpen 과 같은 값이라 입술과 치아가 같이 움직인다.
-    private func updateMouthInner(_ weights: ArkitWeights) {
+    func updateMouthInner(_ weights: ArkitWeights) {
         guard let mouthInner, var comp = mouthInner.components[BlendShapeWeightsComponent.self] else { return }
         for i in comp.weightSet.indices {
             var data = comp.weightSet[i]
@@ -434,6 +480,75 @@ public final class BustEntity {
         let mean = dark.reduce(SIMD3<Float>.zero, +) / Float(dark.count)
         // 너무 어두우면(동공만 잡힘) 조금 띄워 홍채답게.
         return simd_max(mean, SIMD3(repeating: 0.08))
+    }
+
+    /// 진단(2026-10-08, 눈 감기 때 눈알이 보이는 문제): 주어진 가중치로 CPU 에서 계산한 패치 정점과 **실제 눈알 피벗**(위치·스케일)의
+    /// 구면 거리를 잰다 — 앱에 붙은 눈알 기준으로 눈꺼풀이 안/밖 어디에 있는지. 음수 = 눈알이 눈꺼풀 밖으로 나온다.
+    public func debugEyeClosure(weights: ArkitWeights) -> String {
+        var lines: [String] = []
+        let r0 = template.manifest.eyeRadius
+        for (name, pivot) in [("L", eyePivotL), ("R", eyePivotR)] {
+            guard let pivot else { lines.append("\(name): 눈알 없음"); continue }
+            let c = pivot.position, r = r0 * pivot.scale.x
+            var minD = Float.greatestFiniteMagnitude, n = 0, inside = 0
+            for v in 0..<min(template.patchCount, basePositions.count) {
+                // 렌더 정점 → 원본 정점 매핑 없이, 원본 패치 정점 v 의 첫 렌더 정점을 쓴다
+                guard let rv = renderMesh.sourceIndex.firstIndex(where: { Int($0) == v }) else { continue }
+                var p = basePositions[rv]
+                for (k, s) in shapeOrder.enumerated() { let w = weights[s]; if w > 0.001, rv < deltas[k].count { p += deltas[k][rv] * w } }
+                let d = simd_length(p - c) - r
+                guard simd_length(p - c) < r * 1.9 else { continue }
+                n += 1; minD = min(minD, d); if d < 0 { inside += 1 }
+            }
+            lines.append(String(format: "%@: 피벗 (%.1f, %.1f, %.1f) r %.1f mm · 눈꺼풀 패치 %d점 · 구면 최소 %.1f mm · 안쪽 %d점", name as NSString, c.x * 1000, c.y * 1000, c.z * 1000, r * 1000, n, minD * 1000, inside))
+        }
+        return lines.joined(separator: " | ")
+    }
+
+    /// 눈알 깊이 보정(2026-10-08): 사진 피팅(희소)에서는 눈 둘레가 RBF 로 조금씩 움직여 눈꺼풀 닫힘 궤적과 눈알 구면이 어긋난다 —
+    /// 실측 eyeBlink 1.0 에서 눈꺼풀 패치 정점 128점 중 49점이 구면 안(최소 −2.7/−4.1 mm) → 눈을 감아도 눈알이 뚫고 보였다.
+    /// 초상 템플릿이 쓴 방법 그대로("구멍 정점 전부가 구면 바깥에 오도록 뒤로"): 눈을 감은 상태의 눈꺼풀 패치 정점이 모두
+    /// 구면 + `margin` 바깥에 올 때까지 눈 중심을 뒤(−z)로 민다(최대 `maxShift`). 반환 = 뒤로 민 거리(m).
+    public func eyeDepthCorrection(center c: SIMD3<Float>, radius r: Float, margin: Float = 0.0005, maxShift: Float = 0.006) -> Float {
+        var w = ArkitWeights(); w[.eyeBlinkLeft] = 1; w[.eyeBlinkRight] = 1
+        var firstRender = [Int: Int]()
+        for (rv, s) in renderMesh.sourceIndex.enumerated() where firstRender[Int(s)] == nil { firstRender[Int(s)] = rv }
+        var pts: [SIMD3<Float>] = []
+        for v in 0..<min(template.patchCount, basePositions.count) {
+            guard let rv = firstRender[v] else { continue }
+            var p = basePositions[rv]
+            guard simd_length(p - c) < r * 1.9 else { continue }
+            for (k, s) in shapeOrder.enumerated() { let wk = w[s]; if wk > 0.001, rv < deltas[k].count { p += deltas[k][rv] * wk } }
+            pts.append(p)
+        }
+        guard !pts.isEmpty else { return 0 }
+        var shift: Float = 0
+        while shift < maxShift {
+            let cc = c - SIMD3(0, 0, shift)
+            if pts.allSatisfy({ simd_length($0 - cc) >= r + margin }) { break }
+            shift += 0.00025
+        }
+        return min(shift, maxShift)
+    }
+
+    /// 알베도의 두피(Scalp 그룹) 텍셀 평균으로 머리카락색을 추정한다 — 패키지 매니페스트에 `hairTint` 가 없는 옛 페르소나용 폴백.
+    /// `TextureBuilder` 가 두피 영역을 사진 머리색으로 채워 두므로(관측 평균 또는 채움색) 그 평균이 곧 머리색이다. 0…1 sRGB.
+    public func estimateHairColor(from albedo: RGBAImage) -> SIMD3<Float>? {
+        guard albedo.width > 8, albedo.height > 8 else { return nil }
+        let scalp = template.manifest.group(.scalp)
+        guard !scalp.isEmpty else { return nil }
+        var sum = SIMD3<Float>.zero, n = 0
+        let step = max(1, scalp.count / 600)
+        for (i, v) in scalp.enumerated() where i % step == 0 && v < template.uvs.count {
+            let uv = template.uvs[v]
+            let x = min(albedo.width - 1, max(0, Int(uv.x * Float(albedo.width))))
+            let y = min(albedo.height - 1, max(0, Int((1 - uv.y) * Float(albedo.height))))
+            let o = (y * albedo.width + x) * 4
+            sum += SIMD3(Float(albedo.bytes[o]), Float(albedo.bytes[o + 1]), Float(albedo.bytes[o + 2])) / 255
+            n += 1
+        }
+        guard n >= 16 else { return nil }
+        return sum / Float(n)
     }
 
     /// Soban식 절차적 움직임 한 프레임: 머리 yaw/pitch/roll(rad, Head 피벗 기준) + 숨쉬기(Y 스케일, 가슴 기준) + 상하 bob.

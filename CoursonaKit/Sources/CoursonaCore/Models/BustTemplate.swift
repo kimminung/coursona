@@ -66,6 +66,24 @@ public struct LibraryEntry: Codable, Sendable, Equatable {
     public init(name: String, kind: Kind, bone: String, tintable: Bool, vertexCount: Int, faceCount: Int) {
         self.name = name; self.kind = kind; self.bone = bone; self.tintable = tintable; self.vertexCount = vertexCount; self.faceCount = faceCount
     }
+
+    /// 선택 키(materials·textures·bustIndex·noseBridge·skinGroups)가 빠진 항목도 읽는다 — 블렌더 `coursona_blender` 의
+    /// `update_library_json` 은 종류별로 있는 키만 쓴다(헤어: materials·textures, 셔츠: skinGroups). 합성 디코더는
+    /// 기본값이 있어도 키가 없으면 실패하므로 직접 쓴다. `bone`·`tintable` 도 없으면 kind 기본값으로 채운다.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        bone = try c.decodeIfPresent(String.self, forKey: .bone) ?? (kind == .shoulders ? "Root" : "Head")
+        tintable = try c.decodeIfPresent(Bool.self, forKey: .tintable) ?? (kind == .hair)
+        vertexCount = try c.decodeIfPresent(Int.self, forKey: .vertexCount) ?? 0
+        faceCount = try c.decodeIfPresent(Int.self, forKey: .faceCount) ?? 0
+        materials = try c.decodeIfPresent([String].self, forKey: .materials) ?? []
+        textures = try c.decodeIfPresent([String: String].self, forKey: .textures) ?? [:]
+        bustIndex = try c.decodeIfPresent([Int].self, forKey: .bustIndex)
+        noseBridge = try c.decodeIfPresent([Float].self, forKey: .noseBridge)
+        skinGroups = try c.decodeIfPresent([String].self, forKey: .skinGroups) ?? []
+    }
 }
 
 /// 프리비즈 카메라 (2차 계약 #9): 맨 흉상, 조준점 (0, 0.41, 0.09), 카메라 (0, 0.41, 1.29), 수평 FOV 39.60°, 1920×1080, 30 fps.

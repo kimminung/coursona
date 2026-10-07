@@ -237,6 +237,28 @@ struct FitTests {
         #expect(throws: FitError.self) { try FaceFitter.fit(bundle: poor, template: t) }
     }
 
+    /// 실기기 회귀(2026-10-07, Mac 카메라가 아래에서 올려다본 7컷): 턱·입꼬리가 시선 가중치에서 모두 버려져 중심이 눈꼬리 4 + 코끝 5점만
+    /// 남자 거의 한 평면 → RBF 피벗비 2.8e7, 눈알이 템플릿에서 0.5 m 날아가고 텍스처 관측 1%. 중심 5점이어도 머리가 제자리에 있어야 한다.
+    @Test("희소 폴백 퇴화: 눈꼬리 4 + 코끝만 남아도 RBF 가 폭주하지 않는다(워프 ≤ 45 mm · 눈알 제자리)")
+    func sparseFitDegenerateFiveLandmarks() throws {
+        let t = Self.template
+        let user = SyntheticTemplate.perturbed(t, SyntheticTemplate.Perturbation(scale: 1, noseBump: 0.006, chinExtend: 0.006, cheekWidth: 0))
+        var b = Self.sparseBundle(user: user, template: t, kinds: [.front, .left, .right, .up])
+        let dropped = [LandmarkName.mouthLeft, .mouthRight, .chin].map(\.rawValue)
+        for i in b.shots.indices { for k in dropped { b.shots[i].meta.keyPoints2D?[k] = nil } }
+        b.meta.shots = b.shots.map(\.meta)
+        let id = try FaceFitter.fit(bundle: b, template: t)
+        let q = try #require(id.quality)
+        #expect(q.method == "sparse" && q.landmarksUsed == 5)
+        #expect(q.rbfPivotRatio < SparseFitter.maxPivotRatio, "피벗비 \(q.rbfPivotRatio)")
+        var maxMove: Float = 0
+        for i in id.positions.indices { maxMove = max(maxMove, simd_length(id.positions[i] - t.positions[i])) }
+        print(String(format: "퇴화 5점: 최대 이동 %.1f mm · λ %.3g · 피벗비 %.3g · 메모 %@", maxMove * 1000, q.rbfLambda, q.rbfPivotRatio, q.notes ?? ""))
+        #expect(id.positions.allSatisfy { $0.x.isFinite && $0.y.isFinite && $0.z.isFinite })
+        #expect(maxMove <= SparseFitter.maxWarpDisplacement + 1e-4, "정점 최대 이동 \(maxMove * 1000) mm")
+        #expect(simd_length(id.eyeCenterL - t.manifest.eyeCenterL) < 0.02 && simd_length(id.eyeCenterR - t.manifest.eyeCenterR) < 0.02)
+    }
+
     /// 코가 카메라 쪽으로(+Z) 튀어나온 건 **정면 한 장으로는 거의 안 보인다**(시선 축 변위) — 좌·우·위 컷을 더하면
     /// 광선 삼각측량으로 그 깊이가 드러나야 한다(SparseFitter.swift 머리말의 "측면 컷으로 코 높이 보강").
     @Test("희소 폴백 다시점: 코 깊이(+Z)는 정면 한 장보다 5컷 삼각측량이 정답에 더 가깝다")

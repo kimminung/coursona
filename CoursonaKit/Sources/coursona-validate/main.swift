@@ -208,6 +208,60 @@ func run() -> Int32 {
             let selfX = SelfIntersectionCheck.check(capped)
             if selfX.isEmpty { print("  자기교차: 0건(겹침 없음)") }
             else { print("  자기교차: " + selfX.map { "\($0.shape.rawValue) \($0.flippedTriangles)개" }.joined(separator: " · ")) }
+            // 눈 감기 점검(D-401 후속, 2026-10-08): 진짜 눈알(반지름 identity.eyeRadius, 중심 identity.eyeCenter)이 붙었을 때
+            // eyeBlink 1.0 에서 눈꺼풀(눈 중심 1.9r 안의 **패치** 정점 — LidInner 안쪽 띠는 설계상 구면 안이라 제외)이 구면 안으로
+            // 들어가면 눈을 감아도 눈알이 눈꺼풀을 뚫고 보인다. 양수 = 눈꺼풀이 눈알 바깥.
+            for (name, c, shape) in [("왼눈", identity.eyeCenterL, ArkitShape.eyeBlinkLeft), ("오른눈", identity.eyeCenterR, .eyeBlinkRight)] {
+                let r = identity.eyeRadius
+                let delta = identity.patchDeltas[shape] ?? template.shapeDeltas[shape] ?? []
+                var minOpen = Float.greatestFiniteMagnitude, minClosed = Float.greatestFiniteMagnitude, n = 0
+                var frontOpen: Float = -1, frontClosed: Float = -1   // 눈 중심 바로 앞(+Z) 쪽 눈꺼풀의 구면 거리
+                for v in 0..<min(template.patchCount, identity.positions.count) {
+                    let p = identity.positions[v]
+                    let dOpen = simd_length(p - c)
+                    guard dOpen < r * 1.9 else { continue }
+                    n += 1
+                    minOpen = min(minOpen, dOpen - r)
+                    let q = v < delta.count ? p + delta[v] : p
+                    minClosed = min(minClosed, simd_length(q - c) - r)
+                    let lateral = simd_length(SIMD2(q.x - c.x, q.y - c.y))
+                    if lateral < r * 0.35 && q.z > c.z { frontClosed = max(frontClosed, simd_length(q - c) - r) }
+                    if simd_length(SIMD2(p.x - c.x, p.y - c.y)) < r * 0.35 && p.z > c.z { frontOpen = max(frontOpen, dOpen - r) }
+                }
+                // 눈 구멍 테두리(캡이 닫은 고리 = 실제로 보이는 눈꺼풀 가장자리)가 눈을 감을 때 얼마나 닫히나: 고리의 세로 폭(뜸 → 감음).
+                if let closure = (shape == .eyeBlinkLeft ? capped.eyeLeft : capped.eyeRight) {
+                    let ids = closure.loopVertexIDs.filter { $0 < capped.template.positions.count }
+                    let dAll = capped.template.shapeDeltas[shape] ?? []
+                    func extent(_ closed: Bool) -> (Float, Float) {
+                        var lo = Float.greatestFiniteMagnitude, hi = -Float.greatestFiniteMagnitude
+                        for v in ids {
+                            var p = capped.template.positions[v]
+                            if closed, v < dAll.count { p += dAll[v] }
+                            lo = min(lo, p.y); hi = max(hi, p.y)
+                        }
+                        return (lo, hi)
+                    }
+                    let (lo0, hi0) = extent(false), (lo1, hi1) = extent(true)
+                    let ringDelta = ids.compactMap { $0 < dAll.count ? simd_length(dAll[$0]) : nil }
+                    print(String(format: "    눈 구멍 테두리 %d점: 세로 폭 뜸 %.1f mm → 감음 %.1f mm (중심 y 기준 뜸 %+.1f…%+.1f, 감음 %+.1f…%+.1f) · 테두리 깜빡임 델타 평균 %.1f / 최대 %.1f mm",
+                                 ids.count, (hi0 - lo0) * 1000, (hi1 - lo1) * 1000, (lo0 - c.y) * 1000, (hi0 - c.y) * 1000, (lo1 - c.y) * 1000, (hi1 - c.y) * 1000,
+                                 ringDelta.reduce(0, +) / Float(max(1, ringDelta.count)) * 1000, (ringDelta.max() ?? 0) * 1000))
+                }
+                // 눈 앞점 c+(0,0,r) 에 가장 가까운 패치 정점 4개: 어떤 정점이 눈 앞을 덮는지(위치·깜빡임 델타 크기)
+                let front = c + SIMD3<Float>(0, 0, r)
+                let nearest = (0..<min(template.patchCount, identity.positions.count)).map { ($0, simd_length(identity.positions[$0] - front)) }
+                    .sorted { $0.1 < $1.1 }.prefix(4)
+                print("    눈 앞점 최근접 패치 정점: " + nearest.map { v, d in
+                    let p = identity.positions[v] - c
+                    let dl = v < delta.count ? simd_length(delta[v]) : 0
+                    return String(format: "#%d d=%.1f mm (중심 기준 x%+.1f y%+.1f z%+.1f, 깜빡임 델타 %.1f mm)", v, d * 1000, p.x * 1000, p.y * 1000, p.z * 1000, dl * 1000)
+                }.joined(separator: " · "))
+                print(String(format: "  눈 감기 점검 %@: 눈꺼풀 패치 정점 %d · 구면 거리 최소 뜸 %.1f / 감음 %.1f mm · 정면 덮개 뜸 %@ / 감음 %@%@",
+                             name as NSString, n, minOpen * 1000, minClosed * 1000,
+                             frontOpen < 0 ? "없음" : String(format: "%.1f mm", frontOpen * 1000),
+                             frontClosed < 0 ? "없음(눈 앞을 덮는 눈꺼풀 정점이 없다)" : String(format: "%.1f mm", frontClosed * 1000),
+                             minClosed < -0.0003 ? "  ⚠︎ 감아도 눈알이 눈꺼풀을 뚫는다" : ""))
+            }
             // 실루엣 진단: 그룹별 대응 수 (어디가 깊이로 맞춰졌는지)
             if !bundle.meta.sparse {
                 let aligns = FaceFitter.alignments(bundle: bundle, template: template)

@@ -2,7 +2,7 @@
 
 상태: ✅ 완료 · 🔄 진행 · ⏳ 대기 · 🧪 실기기 검증 필요 · 🔬 스파이크(결과에 따라 설계 분기)
 
-원칙(초상 계승): 마일스톤 끝에 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·iPhone/Mac 실기기) 통과 + 체크리스트. 근거 문서는 `Docs/TechPRD.md` v0.2(절 번호는 거기 기준), UI 근거는 `Docs/UXPRD.md`. **2026-10-05 밤 구현 착수.** Combine 금지 아님(TechPRD §6.1 예외).
+원칙(초상 계승): 마일스톤 끝에 4개 빌드(iOS 시뮬·iPadOS 시뮬·macOS·iPhone/Mac 실기기) 통과 + 체크리스트. 근거 문서는 `Docs/TechPRD.md` v0.2(절 번호는 거기 기준), UI 근거는 `Docs/UXPRD.md`. 디자인(Persona 재현 에셋) 근거는 디자인 PRD — 아래 **D 절**. **2026-10-05 밤 구현 착수.** Combine 금지 아님(TechPRD §6.1 예외).
 
 ## C0 · 프로젝트 셋업
 
@@ -107,6 +107,86 @@
 | T-809 | UI 5단계: 초상 `Views/TransferView.swift` 포팅(화면 6b 송수신), 업그레이드 병합 플로우(화면 7b), Mac 3단 워크스페이스(사이드바/뷰포트/인스펙터)·iPad 가로 캡처 분할 | UXPRD §6 화면 6b·7b·Mac-1 | ⏳ |
 | T-810 | UI 6단계: 접근성(Dynamic Type·VoiceOver·Reduce Motion), UXPRD §6/§8 bilingual 문구 정확히 맞추기, §11 빈/에러 상태 전부 | UXPRD §9·§10·§11 | ⏳ |
 
+## D · 디자인 — Persona 재현 에셋 (Hair · Shoulders · Eyes/Mouth)
+
+근거: **앱이 받는 것은 `Docs/AssetContract.md`(테크 계약)와 `Template/coursona_assets.json`(매니페스트)이 정본**. 디자인 근거는 디자인 PRD(Claude Doc 「Coursona 디자인 PRD — 비전프로 Persona 재현 에셋」, https://claude.ai/code/artifact/597cc14c-754f-43c5-81d9-c2f29351f464), 계약은 `TemplateValidator.swift`(2차 계약, 2026-10-03). 블렌더 작업 패키지 `coursona_blender/`(스크립트·텍스처·README)를 함께 전달. 원칙: Bust·리그·ARKit 패치는 건드리지 않는다 · 계약 스켈레톤(Root > Spine > Neck > Head > {Eye_L, Eye_R})에 뼈를 더하지 않는다 · 같은 이름 오브젝트를 교체하기 전에 .blend 사본을 저장한다. 아이폰은 스플랫이 없으므로(T-504) Persona 실루엣은 이 절의 메시 에셋이 맡는다. 블렌더 에셋은 모두 색 없는 투명한 틀(무채색 연회색, 불투명도 10%)이며 Bust 피부(Skin) 머티리얼도 같은 값으로 둔다(`skin_carrier`, 머티리얼 값만 — 메시·리그·그룹·UV·셰이프키 불변). 색과 윤곽은 앱이 트루뎁스 정점으로 코드에서 만들므로 미리보기 두상은 둥근 타원체 하나(이마·턱·코·입술 볼륨 없음)이고 남녀 차이는 머리폭·목 둘레·어깨폭뿐이다.
+
+### D0 · 준비
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-001 | 계약 확정: coursona 포팅 검증기와 초상판(2차 계약)의 차이, export_coursona.py 위치·CLI 인자, library.json 최상위 형태 | PRD §에셋 계약, Q-D2·Q-D3 | 🔄 — 초상판 `TemplateValidator.swift` 확인: 이름 규칙 `^(Hair\|Glasses\|Beard\|Shoulders)_[a-z0-9_]+$`, `hairStyles` 에 long_wave, `requiredLibrary` 에 Shoulders_shirt(**두 오브젝트는 초상 .blend 에 이미 있을 가능성 높음 → 교체**), 스켈레톤 6뼈(**Mouth_Inner 뼈 없음 → Head 강체**), 눈 뼈 머리 = 눈알 중심 0.5 mm, `mouthInnerShapes` 5개, `--no-usdz` 금지. coursona 포팅본·CLI 인자는 미확인 |
+| D-002 | `coursona_blender/` 를 맥(예: `~/Desktop/coursona_blender`)에 두고, 블렌더 쪽 Claude 에게 README 의 요청문으로 `run_all.main(export=False)` 실행 요청 | PRD §제작 파이프라인 | ✅ — **2026-10-07 밤, 앱 쪽 Claude 가 헤드리스로 직접 실행**(블렌더 쪽 Claude 불필요): `/Applications/Blender.app`(5.2.2, numpy·pxr 내장) + 초상 `Chosang_Template.blend` 사본을 리포 안 `.blender_work/`(gitignore)에 두고 `Blender -b Coursona_Template.blend --python run_blender.py`. **함정 둘**: ① 샌드박스가 `~/Desktop`·`~/.thumbnails` 쓰기를 영원히 막아 첫 실행이 `save_mainfile` 의 썸네일 `fopen` 에서 멈췄다 → 러너에서 `preferences.filepaths.file_preview_type = 'NONE'`, 작업 폴더는 리포 안 ② 블렌더 쪽 Claude 의 `export_coursona.py` 는 존재하지 않는다 — 실제 스크립트는 초상 리포 `Chosang/tools/blender/export_chosang.py`(읽기 전용, `--out` 필수) |
+
+### D1 · 블렌더 에셋 (블렌더 쪽 Claude)
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-101 | 진단 `fix_eyes_mouth.diagnose()`: Eye_L/R·Mouth_Inner 의 존재·스킨(단일 뼈 100% 여부)·머티리얼·셰이프키·컬렉션, Hair_long_wave·Shoulders_shirt 기존 여부를 보고서에 기록 | PRD §에셋 스펙 3 | ⏳ |
+| D-102 | Shoulders_shirt: Shoulders 영역 셸 3.5 mm + 칼라(스탠드 앞 18·뒤 24 mm, 리프 뒤 30·앞 포인트 60 mm) + 절단면 안쪽 접기, Root·Neck 가중치 복사·정규화, `M_Shirt_Navy`(#1E2A44, roughness 0.82), UV v = 높이 | PRD §에셋 스펙 2 | 🔄 — `add_shoulders_shirt.py` 작성. 대리 흉상에서 칼라 최소 간격 3.7 mm·앞 포인트 확인(첫 시도의 광선 방식 리프가 망토처럼 퍼져 표면 걷기로 수정). **v1.2**: `sex` 프리셋(남성: 스탠드 20/26 mm·리프 32 mm·단추 6 mm). **v1.3**: 머티리얼 무채색 10%. **v1.1 디테일**: 앞 플래킷(1.6 mm 덧단) + 단추 4개(8.5 cm 간격, 슬롯 `M_Shirt_Button`) + 칼라 단추, 옷 주름 ±0.7 mm, 등 요크 솔기. 블렌더 미실행 |
+| D-103 | Hair_long_wave(셔츠 **다음**): 두피 캡 + 카드 284장 3층, 가운데 가르마, 볼 높이부터 웨이브(파장 9.5 cm, 진폭 11 mm), 아래 표면(어깨·등·칼라) 1.8 cm 위에서 끝, Head 강체, `T_Hair_LongWave_base.png`(2048², 회색+알파, 평균 회색 0.64) | PRD §에셋 스펙 1 | 🔄 — 스크립트·텍스처 완료, 대리 흉상 렌더로 형태·간격 확인. **v1.1 디테일**: 층 5개(inner·mid·outer + 얼굴 감싸는 frame 12장 + 헤어라인 잔머리 baby 70장, 총 366장·약 2.3만 정점), 카드 비틀림·폭 변화, 가르마 +5 mm 오프셋, 텍스처에 발레아주·하이라이트 가닥·잔머리 + `T_Hair_LongWave_mask.png`(R 뿌리→끝, G 가닥 id, B 하이라이트). 블렌더 미실행 |
+| D-104 | Eye_L/R·Mouth_Inner: 단일 뼈 스킨 → 강체 전환, 눈 오리진 = 눈 뼈 머리(0.5 mm), 슬롯 공막→홍채→동공(기하 판정 재정렬), Mouth_Inner 는 Head 강체 + 셰이프키 5개(Bust 의 같은 키에서 턱끝 Kabsch 맞춤) + 드라이버. 없을 때만 생성 | PRD §에셋 스펙 3 | 🔄 — `fix_eyes_mouth.py` 작성, 생성기·Kabsch 오프라인 검증(회전 18.00° 복원). **v1.2**: 전부 삼각형·고밀도(눈 2,498정점·4,992면, 생성형 입안 7,640정점·14,072면), 홍채 접시(0.5 mm, 눈꺼풀 안전), 절치 유두·대구치 교두·중심와, 둥근 잇몸 단면, 설유두 요철, `sex` 프리셋(남성 기본). **v1.3**: 입 돌출 조절 `mouth_protrusion`(m, 앞니 1 mm당 2° 순측 기울기)·`overjet`·`overbite` 파라미터, 머티리얼 무채색 10%, 폴백 텍스처는 `coursona_textures` 속성으로만 참조. **v1.1 디테일**: 홍채·공막 텍스처(`T_Eye_Iris_base.png` 섬유·크립트·림벌 링, `T_Eye_Sclera_base.png` 혈관) + 눈 UV 재작성(홍채 평면·공막 구면), 치아 해부 형태(삽 모양 절치·송곳니 첨두·대구치, ±2° 어긋남)와 `T_Teeth_base.png`, 치은 스캘럽, 혀 정중 고랑. 블렌더 미실행 |
+| D-105 | `run_all` 보고서(`Template/coursona_build_report.json`) 전 항목 pass + 뷰포트 정면·¾·측면을 레퍼런스 이미지와 나란히 비교 | PRD §검수 | 🔄 — **실제 Bust 에서 1차 실행 결과(2026-10-07)**: Shoulders_shirt **pass**(몸판 최소 2.1 mm·칼라 3.7 mm, 포즈 7종 관통 0, 5,205 정점·10,084 삼각형). Hair_long_wave **fail**: 캡 pass(1.49 mm), 카드 레스트 1점 1.07 mm(<1.4), **포즈 7종에서 카드가 어깨·목을 관통**(yaw 30° 248점/−18 mm, pitch_up20 2,321점/−30 mm) + 레스트 Bust 삼각형 교차 240 — 강체 Head 부착 + 36 cm 긴 머리의 구조적 한계(PRD "결정 — 머리 길이"의 예상대로; 앱은 흉상 전체가 한 덩어리로 돌아 실제 관통은 안 보임). hair_vs_shirt 같은 이유로 fail. Eye_L/R **fail 은 검사 정의 문제**: `lid_gap_min_mm` 가 전 키에서 정확히 −1.5 — 초상 LidInner 2열이 눈알 반지름 −1.5 mm 구면 위에 있도록 **설계**된 값이라 "눈꺼풀 ≥ 0.2 mm 바깥" 기준과 상충. Mouth_Inner fail(`teeth_vs_lips` 전 키 ≈ −6.0 mm 상수, inside 51–1,164) 도 같은 종류로 의심(입 캡 포켓 6 mm 와 일치) — 앱에서 입 벌림 포즈 때 윗니·입안이 입술 안쪽에 정상 표시됨. 레퍼런스 나란히 비교는 미실시 |
+| D-106 | 테크 데이터: 모든 에셋 삼각화((a,b,c)+(a,c,d)), uv1 `CoursonaData` = (presence, height01), 면 구간(`faceRanges`), `topologyHash`, 매니페스트 `coursona_assets.json` | `Docs/AssetContract.md` §4·§5 | 🔄 — 스크립트 완료(오프라인 검증), 블렌더 미실행 |
+| D-107 | 머리 스플랫 호스트: 볼륨 셸 3겹(삼각형, 고유 UV, 가닥 방향 flow) → `hosts/SplatHost_Hair_long_wave.json`, 블렌더 원본은 내보내기 제외 컬렉션 `Splat_Hosts` | `Docs/AssetContract.md` §6 | 🔄 — 스크립트 완료(대리 흉상 검증), 블렌더 미실행 |
+
+### D2 · 내보내기·검증
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-201 | T-003 가드 해제: `mouthInnerShapes` 메타와 Template.usdz 안의 Eye_L/R·Mouth_Inner 실메시를 로드(EyesMouth.usdz 는 계속 미사용) | PRD §리스크, T-003 | ✅ — 앱은 `coursona_assets.json` 경로로 Template.usdz 의 Eye_L/R(강체 Xform, 2,498 정점)·Mouth_Inner(블렌드셰이프 5, USD 가 만든 더미 Skel 포함)를 직접 붙인다(InspectionView → `attachPersonaAssets`). `mouthInnerShapes` 는 template.json 에 그대로 나가고 검증기만 본다. EyesMouth.usdz 는 매니페스트 없는 옛 템플릿용 폴백으로만 번들에 남김 |
+| D-202 | export_coursona.py 를 CLI 로 실행(`--no-usdz` 없이, Apply Modifiers OFF) → Template.usdz·textures·library.json | PRD §제작 파이프라인 | ✅ — `Blender -b Coursona_Template.blend --python pre_export.py --python Chosang/tools/blender/export_chosang.py -- --out <Template>`. **`pre_export.py` 가 필요했다**: 초상 .blend 의 Library_Hair 컬렉션이 뷰 레이어에서 제외돼 있어 `select_set` 이 실패, 머리 12종의 `library/*.usdz` 가 아마추어만 든 4 KB 로 나왔다(초상 Template/library 가 비어 있던 이유). 전부 포함시킨 뒤 19종 정상(67 MB). bust.mesh 는 기존과 바이트 동일, template.json 은 `textures`·`libraryObjects` 순서만 다름 |
+| D-203 | `inspect_usdz.py` problems 0: 다섯 이름이 프림, 강체 3종(Hair·Eye·Mouth)에 조인트 가중치 없음, 셔츠 조인트 Root·Neck, Mouth_Inner 블렌드셰이프 5. 실패하면 `attach_mode="CHILD_OF"` 로 D-103·D-104 재실행 | PRD §리스크 | 🔄 — pxr 검사: Hair_long_wave 는 `library/Hair_long_wave.usdz` 에 SkelRoot 밖 Xform(스킨 없음) ✓, Eye_L/R 은 Template.usdz 의 SkelRoot 아래 Xform 이지만 RealityKit `findEntity` 로 잡힘 ✓(CHILD_OF 불필요), Mouth_Inner 는 블렌드셰이프 때문에 USD 가 `Mouth_Inner/Skel`(joint1) 바인딩을 붙임(예상된 구조, 앱 `BlendShapeWeightsComponent` 로 jawOpen 구동 확인), Shoulders_shirt 는 스킨 ✓ 이나 inspect 가 조인트 목록을 못 읽음(메시가 아니라 Skel 에 있음 — 검사 쪽 거짓 음성). **앱 쪽 발견**: 스킨 메시는 RealityKit 이 Armature 엔티티 하나로 합쳐 프림 이름 아래 ModelComponent 가 없다 → `PersonaAssets.libraryModelEntity` 폴백 추가(라이브러리 usdz 의 유일한 모델) |
+| D-204 | `tools/make_default_template.sh` 로 Default.coursonatemplate 재생성 → `coursona-validate` 오류 0 | PRD §검수 | ✅ — `coursona-validate <Template> --with-usdz` 오류 0(경고는 previz.missing 11개뿐 — 프리비즈 mp4 는 복사 제외). 스크립트 갱신: `coursona_assets.json`·보고서·`hosts/`·매니페스트가 가리키는 `library/<prim>.usdz` 만(19종 전부 넣으면 +67 MB) 포함, 기본 출력 경로 오타(`coursona/coursona/…`) 수정. 번들 31 → 45.8 MB |
+
+### D3 · 앱 룩 (앱 쪽 Claude)
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-301 | RigidAttach 시스템: library.json `bone`(Head·Eye_L·Eye_R)의 조인트 변환을 매 프레임 강체 에셋 엔티티에 복사 — 클립·라이브 고개 회전을 따라가게. **없으면 강체 에셋 3종이 고개를 안 따라감** | PRD §리스크 | 🔄 — `PersonaAssets.swift` `BustEntity.attachPersonaAssets`: 눈 프림은 `identity.eyeCenterL/R` 피벗 아래로, 입안·헤어는 Head(=`model`) 아래로 재부모화해 기존 `applyHeadPose`/시선 회전을 그대로 따라감(별도 매 프레임 복사 불필요). 실에셋 검증 ✓(D-401, 2026-10-08) |
+| D-302 | 아이폰: 라이브러리 헤어·셔츠 착용 시 Bust 나머지 파트 opacity 1.0(현재 기본 0, T-103·Q2) — 목·귀가 비어 보이지 않게 | PRD §룩·렌더링 | ✅ — 입체감 v3(`832b8b9`)가 머리~어깨를 단일 메시·단일 머티리얼(불투명)로 그려 이미 충족 |
+| D-303 | 헤어 머티리얼: 에셋은 opacity 0으로 오므로 앱이 실루엣 알파를 opacity 텍스처로 연결 후 `opacityThreshold` 0.45, `faceCulling = .none`, 틴트 = 목표색 ÷ 0.63, 사진 머리색·선택 유지(T-704) 연결 | PRD §룩·렌더링 | 🔄 — `PersonaAssets.material(role: .hair …)`: `PersonaTextureCache.alphaMask` → opacity, threshold 0.45, culling none, 틴트 = `PersonaLook.hairTint ÷ hairTextureMeanGray(0.63)`; InspectionView 가 `manifest.hairTint`(사진 머리색) 를 넘김. 실에셋 검증 ✓(D-401, 2026-10-08) |
+| D-304 | 셔츠 하단 페이드: UV v 0 → 0.35 알파 그라데이션(CustomMaterial 표면 셰이더) | PRD §룩·렌더링 | 🔄 — `PersonaSurface.metal`(`coursonaPersonaSurface`) smoothstep(fade.x, fade.y, uv1.y); `PersonaLook.shirtFadeHeight01` 기본 (0, 0.18). uv1 베이크는 macOS/iOS 27+ (`textureCoordinates1`), 그 아래는 PBR 폴백 |
+| D-305 | 눈: 실제 눈알이 있으면 시선 = 엔티티 회전(eyeLook 8방향), 캡 UV 이동(T-604)은 눈알 없는 템플릿 폴백. 공막 0.18 · 홍채 0.25 + clearcoat 0.6 · 동공 0.10 | PRD §룩·렌더링 | 🔄 — 눈 프림을 `eyePivotL/R` 로 재부모화(기존 시선 회전 경로 재사용), 캡은 `setCapsHidden`; role 별 roughness 공막 0.18·홍채 0.25(clearcoat 0.6)·동공 0.10. 실에셋 검증 ✓(D-401, 2026-10-08) |
+| D-306 | 입: Mouth_Inner `BlendShapeWeightsComponent` 에 Bust 와 같은 5개 가중치(FaceRigSystem 합성 결과를 그대로) | PRD §에셋 스펙 3 | 🔄 — `mouthInner` 설정 → 기존 `updateMouthInner` 가 가중치 복사. 실에셋 검증 ✓(D-401, 2026-10-08) |
+| D-307 | Mac 스플랫 정리: 헤어 착용 시 두피 스플랫, 셔츠 착용 시 어깨 스플랫 끄기(T-503) | PRD §룩·렌더링 | ⛔ — 스플랫(CoursonaSplat)이 `832b8b9` 에서 영구 제거됨. 끌 스플랫이 없어 해당 없음 |
+| D-308 | **유령 룩 합성**: 블렌더 에셋은 색을 뺀 투명한 틀(무채색 연회색, 기본 opacity 0.10 = 90% 투명, `coursona_opacity`·`coursona_colorless`)로 받고, 앱이 ① 사진 기반 색 입히기(머리 틴트·셔츠 평균색·눈/입 투영, 없으면 블렌더 폴백 텍스처) ② 머리 실루엣 = `textures.base` 알파(`coursona_silhouette`) ③ 페르소나만 오프스크린 렌더 → 가장자리 8–14 px 블러 → 전체 불투명도 0.85 → 하단 페이드 → 배경 위 합성. 레퍼런스처럼 반투명·흐린 경계 | PRD §룩·렌더링 원칙 | 🔄 — ①② 는 D-303/309 로 구현(틴트·셔츠색·홍채색·실루엣 알파). ③ 은 **흉상 자체 셰이더로 1차 근사**(2026-10-07 밤): `coursonaPersonaBust`(`PersonaSurface.metal`) + `BustEntity.setGhostLook` — 프레넬 가장자리 소멸 0.6 + 모델 y 하단 8 cm 페이드, 검사 화면 "유령 룩" 토글(기본 켬). 기본 불투명도는 **1** 로 둔다 — 검은 무대에서 0.85 는 반투명이 아니라 15% 어둡게 보일 뿐이고 반투명 입술 뒤로 입 캡이 비쳤다(실측). 밝은 배경을 도입할 때 0.85 + 오프스크린 가장자리 블러를 다시 검토. **실측 함정**: 초기 피부 PBR 의 살구색 틴트(0.86,0.68,0.58)가 텍스처를 올린 뒤에도 남아 `base_color_tint()` 로 셰이더에 들어와 색이 어둡고 주황으로 변했다 → 흉상 셰이더는 틴트를 곱하지 않고 `setSkinTexture` 가 틴트를 흰색으로 명시. 켬/끔 픽셀 차 이마 (248,223,201) vs (252,230,213) 로 일치 확인 |
+| D-309 | 에셋 로더: `coursona_assets.json` 단일 진입점 — 스키마 확인, 프림 이름으로 엔티티 찾기, 삼각형 수·`topologyHash` 확인(정점 수는 UV 솔기 분할로 달라질 수 있음), 머티리얼 슬롯을 역할(role)로 매핑 | AssetContract §4·§8 | 🔄 — `CoursonaCore/Models/AssetManifest.swift` + `TemplateStore.loadAssetManifest/templateUSDZURL/texturesFolder`, `AssetManifestTests`(스키마·presence 식·관대한 library.json). 실제 산출물로 검증 ✓(D-501) |
+| D-310 | presence 셰이더: CustomMaterial 표면 셰이더에서 uv1.x(없으면 §5 식) × 기본 불투명도, 프레넬 가장자리 사라짐 `pow(1−|N·V|, 2)` — 블렌더 데이터 + 코드 식 둘 다 지원 | AssetContract §5 | 🔄 — `coursona/Shaders/PersonaSurface.metal` + `PersonaSurfaceShader.swift`(default.metallib 에 포함 확인). uv1 이 없으면 `PresenceParams.presence(at:headJoint:)` 로 앱이 베이크(`bakePresenceUV1`) |
+| D-311 | (macOS) 스플랫 바인딩 확장: `SplatBinder` 가 호스트 JSON(머리 셸)과 셔츠 body·collar 구간을 받아 바인딩 — 장축 = flow, 겹 0·1 볼륨/겹 2 잔머리, 사진 투영으로 초기 색. 스플랫이 켜지면 틀 메시는 `OcclusionMaterial` | AssetContract §6·§7, T-503 | ⛔ — CoursonaSplat 모듈 제거로 보류. 블렌더 쪽 D-107 호스트 산출물은 만들어 두되 앱은 소비하지 않음 |
+
+### D4 · 검수
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-401 | 레퍼런스 비교 렌더(정면·¾) + T-802 스냅샷 세트에 Persona 룩(헤어·셔츠 착용) 추가 | PRD §검수 | 🔄 — **실에셋 앱 검수 1차(2026-10-08 00:00, Mac)**: 매니페스트 5/5 부착, 삼각형 수 전부 일치(헤어 33,656·셔츠 10,084·눈 4,992×2·입 14,048), 셰이더 O. 5° 몽타주(`/tmp/sweep3/montage.png`)·포즈 5종(`/tmp/poses.png`): 머리(사진 틴트 0.21 회색)·네이비 칼라 셔츠·단추·하단 페이드·입 벌림 때 윗니/입안 ✓. **발견·수정 셋**: ① 3/4 뷰에서 먼 쪽 볼이 검게 뚫림 — 헤어 카드가 opacity 0 으로만 가리면 카드 사각형 전체가 깊이를 써 뒤의 반투명 흉상이 지워졌다 → 셰이더에서 알파 ≤ 0.45 는 `discard_fragment()` ② presence(정면 외 사라짐) 가 턴테이블에서 먼 쪽 머리·셔츠를 지워 속이 비어 보임 → `PersonaLook.presenceEnabled` 추가, 검수 화면은 끔 ③ 셔츠 페이드 아래로 흉상 피부 띠 → 흉상 유령 페이드 14 cm. **2차(2026-10-08 00:40) — 남았던 넷 처리**: ① 눈 감기: 눈알은 정확한 12 mm 구(USDZ 실측, 처음 "찌그러졌다"고 본 건 홍채 쪽 정점 밀도로 치우친 무게중심을 기준으로 잰 내 실수)였고, 진짜 원인은 **사진 피팅의 눈 둘레 RBF 워프와 눈꺼풀 닫힘 궤적의 어긋남** — 앱 안 실측 eyeBlink 1.0 에서 눈꺼풀 패치 128점 중 49점이 구면 안(최소 −2.7/−4.1 mm). `BustEntity.eyeDepthCorrection`: 눈을 감은 눈꺼풀 정점이 모두 구면 +0.5 mm 바깥에 올 때까지 눈 중심을 뒤로(최대 6 mm, 실측 L 3.5·R 5.0 mm) → 눈 감기에서 눈꺼풀이 닫히고 뜬 눈의 "튀어나온 눈" 인상도 사라짐(`d4-persona-eye-closure.png`). `coursona-validate --fit` 에 눈 감기 점검(구면 거리·눈 구멍 테두리 세로 폭 뜸 10.9 → 감음 3.1 mm) 추가 ② 두피 캡: `faceRanges.cap` 삼각형을 별도 파트로 떼어(`splitTriangleRanges`) 카드 틴트 ×0.78 머티리얼 — 밝은 회색 판은 사라졌으나 정수리에 어두운 면이 남음(캡 칸 텍스처 자체 개선 필요) ③ 레퍼런스 나란히 비교 `d4-persona-reference-compare.png`(README 에 수록) ④ 헤어 v2: `max_len 0.28·tip_clear 0.035·max_lateral 0.115` 로 재생성·재내보내기 — 포즈 관통 yaw 248→60점, pitch_up 2,321→634점(4배 감소, 0 은 아님), 레스트 Bust 교차 240→273. 번들 재생성(45.9 MB) |
+| D-402 | 🧪 실기기: 아이폰 거울 화면 60 fps(헤어 알파 오버드로), 고개 좌우 30°·숙임 25°에서 관통 없음, jawOpen 1.0 에서 아래 치아·혀가 입술과 함께 내려감 | PRD §검수 | ⏳ |
+
+### D5 · 다음 작업 대비 (2026-10-07 밤, 디자인 PRD·UXPRD 대조)
+
+블렌더 산출물(Template.usdz·textures·library.json·coursona_assets.json)이 도착하면 아래 순서로 받는다. 앱 쪽 코드는 전부 들어가 있고 실에셋으로만 미검증이다.
+
+| ID | 작업 | 근거 | 상태 |
+|---|---|---|---|
+| D-501 | 수신 즉시: `coursona-validate` 로 Template 폴더 검사(오류 0) → `Docs/AssetContract.md` §8 로드 검사 항목(스키마 `coursona-assets/1`, 프림 5개 존재, 삼각형 수·`topologyHash`, 강체 3종 조인트 가중치 없음, 셔츠 Root·Neck, Mouth_Inner 셰이프 5) 을 `AssetManifestTests` 픽스처 대신 실제 파일로 한 번 더 | AssetContract §8, D-203 | ✅ — D-203/D-204 참고. 산출물 원본은 `.blender_work/Template/`(gitignore), 보고서는 번들 안 `coursona_build_report.json` |
+| D-502 | `tools/make_default_template.sh` 로 Default.coursonatemplate 재생성 → Mac 앱 검사 화면에서 `attachPersonaAssets` 보고서(`PersonaAssetReport.notes`) 확인: 헤어·셔츠·눈·입 부착 수, uv1 베이크 여부(OS 27), 폴백 사유 | D-204, D-301~310 | ✅ — 5/5 부착·셰이더 O(D-401 참고). `PersonaBuildPipeline` 이 `manifest.hairTint` 를 사진 머리색으로 채우도록 추가, 옛 패키지는 `BustEntity.estimateHairColor`(두피 텍셀 평균)로 폴백 |
+| D-503 | 룩 검수: 회전 슬라이더 5° 몽타주(`/tmp/coursona_tools/sweep2.sh` 방식)로 −90…90° 헤어 실루엣·칼라 관통·눈알 피벗·입안 jawOpen 확인, 레퍼런스(`Apple-WWDC25-visionOS-26-Personas`)와 정면·¾ 나란히 비교. 헤어 틴트 = `manifest.hairTint ÷ 0.63`, 셔츠 하단 페이드 (0, 0.18) 수치 조정 | D-401, UXPRD §3 원칙 1 | 🔄 — 몽타주·포즈 촬영 완료(D-401). 남은 것: 눈 감기 때 눈알 돌출, 두피 캡 밝기, 레퍼런스 나란히 비교, 헤어 생성 파라미터(`tip_clear`·길이)로 D-105 포즈 관통 줄이기 |
+| D-504 | 유령 룩 2차: 무대 배경을 UXPRD Liquid Stage(#0B0D12~#14171F 그라데이션)로 바꾼 뒤 기본 불투명도 0.85·오프스크린 가장자리 블러(8–14 px) 재검토. 투명 패스에서 입 캡·뒤통수가 비치는 문제는 캡을 `setCapsHidden` 로 숨기거나 흉상을 두 패스(불투명 깊이 → 반투명 색)로 | D-308 ③ | ⏳ |
+| D-505 | 기존 품질 이슈(에셋과 무관, 두 코르소나 공통): ① 얼굴/두피 텍스처 경계 계단(얼굴 밖 관측 버림 2.9–3.4만 텍셀) — 헤어 에셋이 가리면 우선순위 하락 ② 반대쪽 볼 채움 톤이 관측 볼보다 밝음(`TextureFill` 피부 기준색 vs 관측 음영) ③ 눈알 공막 과백·돌출(D-104 실에셋 대기) | 2026-10-07 각도 몽타주 | ⏳ |
+| D-506 | UXPRD 화면 5(검수) 미구현 요소: 상단 좌 "다시 촬영", 액션 바 "거울로 보기"(T-808 MirrorView 필요), 풀업 품질 카드 4칸 그리드(관측 비율/빌드 소요/자기교차/표면 정밀도), 경고 상태 "겹침 N곳 — 다시 촬영 권장"(현재 "겹침 의심 227곳" 은 캡 뒤집힘 근사치라 문구·기준 재정의 필요). "회전" 슬라이더·"유령 룩" 토글은 UXPRD 에 없는 점검용 — 출시 전 "자세히" 아래로 이동 | UXPRD §6 화면 5, T-801 | ⏳ |
+| D-507 | UXPRD 플랫폼 구조: Mac 3단(사이드바·뷰포트·인스펙터 품질/환경 설정 탭 — 조명 보정·머리카락 틴트·배경 분리 민감도), iPad 가로 캡처 분할 — 머리카락 틴트 슬라이더는 `PersonaLook.hairTint` 에 바로 연결 가능 | UXPRD §4·Mac-1, T-809 | ⏳ |
+
+### 디자인 미결 사항
+
+| # | 질문 | 현재 기본값 | 이 태스크에 미친 영향 |
+|---|---|---|---|
+| Q-D1 | 초상 헤어 11종(Head 100% 스킨)을 강체로 일괄 전환할지 | 이번엔 Hair_long_wave 만 강체 | D-103·D-301 |
+| Q-D2 | library.json 최상위 형태(배열 / `{items}`) | 기존 형태 유지, 없으면 배열로 생성 | D-001 |
+| Q-D3 | export_coursona.py 위치·CLI 인자, coursona 검증기 포팅 차이 | 초상판 2차 계약 기준 | D-001·D-202 |
+| Q-D4 | v2 어깨를 덮는 앞머리: Neck 스킨 vs 2차 모션 | v1 은 어깨 위 1.8 cm 에서 끝 | D-103 |
+| Q-D5 | 유령 룩 합성 방식: RealityKit 포스트프로세스(renderCallbacks) vs 오프스크린 2패스 | 2패스(실루엣 마스크 블러) | D-308 |
+| Q-D6 | RealityKit 이 USD 의 두 번째 UV(uv1)를 MeshResource 로 넘기는지 | 미확인 — 안 넘기면 presence 는 §5 식으로 계산(D-310) | D-106·D-310 |
+
 ## 블렌더 쪽 제안(참고, 초상 리포는 수정하지 않음)
 
 Q6 관련: `innerBands`(LidInner·LipInner 정점 ↔ 루프 순서 인덱스)와 눈·입 구멍을 처음부터 닫힌 메시로 내보내는 옵션을 `template.json`에 추가해 달라는 제안은 **문서로만** 남긴다(`Docs/Blender-요청-제안.md`, 작성은 사용자 결정). 코르소나는 그 전까지 앱 쪽 추론(`InnerBandIndexMap`)과 `CapBuilder`로 동작한다.
@@ -135,3 +215,4 @@ Q6 관련: `innerBands`(LidInner·LipInner 정점 ↔ 루프 순서 인덱스)�
 5. iPhone → Mac 전송 → 같은 패키지를 열었을 때 5장 스냅샷 일치.
 6. B/C → A 업그레이드 병합 후 이름·머리카락 선택 유지 확인.
 7. 시뮬레이터: 스플랫 폴백 고스트 메시 정상 표시.
+8. Persona 룩(D 절): 라이브러리 헤어·셔츠 착용 상태로 고개 좌우 30°·숙임 25° 관통 없음, 입 벌림에서 치아·혀 동행, 아이폰 60 fps.

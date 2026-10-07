@@ -69,6 +69,8 @@ public enum PersonaBuildPipeline {
                                         templateVersion: template.manifest.version, vertexCount: template.manifest.vertexCount)
         manifest.tier = tier
         manifest.textureQuality = tex.quality
+        // 사진에서 잰 머리카락색 → Persona 헤어 에셋 틴트(T-704·D-303: 앱 틴트 = 목표색 ÷ 0.63). 0…1 sRGB.
+        if let h = tex.hairColor { manifest.hairTint = [h.x, h.y, h.z] }
         manifest.includesCaptureBundle = true
         let pkg = CoursonaPackage(manifest: manifest, identity: identity, albedo: tex.albedo, mask: tex.mask, thumbnail: nil)
         let folder = CoursonaPackageStore.defaultFolder(for: manifest.id)

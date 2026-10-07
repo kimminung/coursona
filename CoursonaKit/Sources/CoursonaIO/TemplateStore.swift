@@ -73,8 +73,39 @@ public enum TemplateStore {
         }
     }
 
+    /// library.json 최상위는 배열이 기본이지만 블렌더 쪽이 `{items|assets|library|entries: [...]}` 형태를 유지할 수도 있다
+    /// (`coursona_common.update_library_json`, Q-D2) — 둘 다 받는다.
     public static func loadLibrary(from folder: URL) -> [LibraryEntry] {
         guard let d = try? Data(contentsOf: folder.appendingPathComponent("library.json")) else { return [] }
-        return (try? JSONDecoder().decode([LibraryEntry].self, from: d)) ?? []
+        if let arr = try? JSONDecoder().decode([LibraryEntry].self, from: d) { return arr }
+        guard let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return [] }
+        for key in ["items", "assets", "library", "entries"] {
+            if let items = obj[key], let data = try? JSONSerialization.data(withJSONObject: items),
+               let arr = try? JSONDecoder().decode([LibraryEntry].self, from: data) { return arr }
+        }
+        return []
+    }
+
+    // MARK: Persona 재현 에셋 (Tasks.md D 절, Docs/AssetContract.md)
+
+    /// Template.usdz(Bust + 라이브러리 + 눈·입 메시) — 있으면 URL. 로드는 호출자가 `Entity(contentsOf:)` 로.
+    public static func templateUSDZURL(in folder: URL) -> URL? {
+        let url = folder.appendingPathComponent("Template.usdz")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// `coursona_assets.json`(테크 매니페스트, 앱 로더의 단일 진입점) — 없으면(옛 템플릿) nil.
+    public static func loadAssetManifest(from folder: URL) -> CoursonaAssetManifest? {
+        guard let d = try? Data(contentsOf: folder.appendingPathComponent("coursona_assets.json")) else { return nil }
+        return try? JSONDecoder().decode(CoursonaAssetManifest.self, from: d)
+    }
+
+    public static func texturesFolder(in folder: URL) -> URL { folder.appendingPathComponent("textures", isDirectory: true) }
+
+    /// `library/<name>.usdz` — 초상 내보내기(export_chosang.py)는 라이브러리 오브젝트(Hair_*, Shoulders_* …)를 Template.usdz 에
+    /// 넣지 않고 오브젝트마다 따로 낸다. 매니페스트 프림이 Template.usdz 에 없으면 호출자가 여기서 같은 이름을 찾아 함께 로드한다.
+    public static func libraryUSDZURL(named name: String, in folder: URL) -> URL? {
+        let url = folder.appendingPathComponent("library", isDirectory: true).appendingPathComponent("\(name).usdz")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 }
