@@ -88,6 +88,15 @@ extension BustEntity {
         let restEyeL = SIMD3<Float>(m.eyeL[0], m.eyeL[1], m.eyeL[2]), restEyeR = SIMD3<Float>(m.eyeR[0], m.eyeR[1], m.eyeR[2])
         let eyeScale = max(0.5, min(2.0, identity.eyeRadius / max(1e-4, m.eyeRadius)))
         var eyesAttached = false, mouthAttached = false
+        // 헤어·셔츠(이하 "default" 분기) 전체 크기 보정(2026-10-08, 실기기 TrueDepth 로 첫 확인):
+        // 사진(B·C 등급)은 `identity.scale` 이 늘 1 로 고정이라(단안 사진은 절대 크기를 모른다, TechPRD §6.3) 이 보정이
+        // 없어도 흉상과 어긋나지 않았지만, A 등급(TrueDepth)은 F1/F3 에서 실제 깊이로 전역 유사변환 스케일 s 를 구한다 —
+        // 그래서 사용자 머리가 블렌더 대리 흉상과 몇 % 라도 다르면, 보정 없는 헤어·셔츠가 실제 크기로 피팅된 흉상과
+        // 어긋나 "두 겹(흉상 레이어 + 머리카락/셔츠 레이어)" 처럼 보였다. Eye_L/R·Mouth_Inner 는 이미 각자 보정이
+        // 있었다(eyeScale·identity.scale clamp) — 헤어·셔츠만 빠져 있었다. Head 조인트 레스트 위치를 축으로 균일
+        // 스케일만 보정한다(이방성 모양 차이까지는 안 고친다 — 그건 부위별 워프가 필요해 범위 밖).
+        let headScale = max(0.6, min(1.6, identity.scale))
+        var scalePivots: [AssetEntry.Kind: Entity] = [:]
 
         for (_, entry) in manifest.assets.sorted(by: { $0.key < $1.key }) {
             var item = PersonaAssetReport.Item(prim: entry.prim, kind: entry.kind.rawValue, attached: false, triangles: 0, expectedTriangles: entry.triangleCount, note: "")
@@ -140,7 +149,16 @@ extension BustEntity {
                 mouthAttached = true
             default:
                 // Head 강체(헤어·안경·수염) 와 Root·Neck 스킨(셔츠) 모두 지금은 model 아래 — 머리말 참고.
-                Self.reparent(prim, under: model, matrix: toBust, restCenter: .zero)
+                // headScale ≈ 1(사진 등급)이면 기존과 동일(피벗이 항등). ≠ 1(A 등급)이면 Head 조인트 레스트를
+                // 축으로 균일 스케일(위 주석 참고).
+                let pivot = scalePivots[entry.kind] ?? {
+                    let p = Entity(); p.name = "PersonaScalePivot_\(entry.kind.rawValue)"
+                    p.position = headJointRest; p.scale = SIMD3(repeating: headScale)
+                    model.addChild(p); scalePivots[entry.kind] = p
+                    return p
+                }()
+                Self.reparent(prim, under: pivot, matrix: toBust, restCenter: headJointRest)
+                if headScale != 1 { item.note += (item.note.isEmpty ? "" : " · ") + String(format: "머리 전체 스케일 ×%.3f", headScale) }
             }
             await Self.applyMaterials(to: modelEntity, entry: entry, look: look, textures: textures, shader: shader)
             item.attached = true
