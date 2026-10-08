@@ -22,8 +22,15 @@ public final class VisionFaceDriver {
     public private(set) var isTracking = false
     public private(set) var isCalibrating = true
     public var calibrationSeconds: Double = 2.0
+    /// 중립 캘리브레이션 진행률 0…1(얼굴을 잡은 뒤부터 센다) — 거울 화면(UXPRD 화면 6)의 원형 카운트다운용.
+    public private(set) var calibrationProgress: Double = 0
 
     private var baseline = VisionFaceSignals.Baseline()
+    /// 🧪 잘못 잡힌 기준 자동 복구(Mac 실측 2026-10-08): 화면이 뜨는 순간 사용자가 머리를 만지며 눈을 찡그리고 있어 그 2초가
+    /// 기준이 되자 눈을 뜨고 있어도 흉상은 계속 감고 있었다. 거울을 보면서 양쪽 눈을 `autoRecalibrateAfter`초 넘게 계속 감고
+    /// 있을 일은 거의 없으니, 그 상태가 이어지면 기준이 틀렸다고 보고 중립을 다시 잡는다.
+    public var autoRecalibrateAfter: Double = 3.0
+    private var eyesClosedSince: CFAbsoluteTime?
     private var calibSamples: [PhotoFrameStatus] = []
     private var calibStart: CFAbsoluteTime?
     private var filters: [ArkitShape: OneEuroFilter] = [:]
@@ -36,17 +43,32 @@ public final class VisionFaceDriver {
     }
 
     public func start() {
-        isCalibrating = true
-        calibSamples = []
-        calibStart = nil
-        for key in filters.keys { filters[key]?.reset() }
-        yawFilter.reset(); pitchFilter.reset(); rollFilter.reset()
+        recalibrate()
         session.start()
     }
 
     public func stop() {
         session.stop()
         isTracking = false
+    }
+
+    /// 카메라는 그대로 두고 중립 기준만 다시 잡는다("기준 자세 재설정").
+    public func recalibrate() {
+        isCalibrating = true
+        calibrationProgress = 0
+        calibSamples = []
+        calibStart = nil
+        eyesClosedSince = nil
+        for key in filters.keys { filters[key]?.reset() }
+        yawFilter.reset(); pitchFilter.reset(); rollFilter.reset()
+    }
+
+    /// "건너뛰고 바로 거울 보기" — 지금까지 모인 표본으로(없으면 기본값으로) 기준을 확정하고 바로 출력을 시작한다.
+    public func skipCalibration() {
+        guard isCalibrating else { return }
+        if !calibSamples.isEmpty { baseline = VisionFaceSignals.averageBaseline(calibSamples) }
+        isCalibrating = false
+        calibrationProgress = 1
     }
 
     /// 디스플레이 루프(또는 타이머)에서 매 프레임 호출 — `PhotoCaptureSession` 은 카메라 프레임마다 자체적으로
@@ -58,6 +80,7 @@ public final class VisionFaceDriver {
         if calibStart == nil { calibStart = now }
         if isCalibrating {
             calibSamples.append(status)
+            calibrationProgress = min(1, (now - calibStart!) / max(0.01, calibrationSeconds))
             if now - calibStart! >= calibrationSeconds {
                 baseline = VisionFaceSignals.averageBaseline(calibSamples)
                 isCalibrating = false
@@ -73,6 +96,12 @@ public final class VisionFaceDriver {
             filters[shape] = f
         }
         weights = filtered
+        if filtered[.eyeBlinkLeft] > 0.85, filtered[.eyeBlinkRight] > 0.85 {
+            if eyesClosedSince == nil { eyesClosedSince = now }
+            else if now - eyesClosedSince! > autoRecalibrateAfter { eyesClosedSince = nil; recalibrate(); return }
+        } else {
+            eyesClosedSince = nil
+        }
         yaw = yawFilter.filter(derived.yaw, timestamp: t)
         pitch = pitchFilter.filter(derived.pitch, timestamp: t)
         roll = rollFilter.filter(derived.roll, timestamp: t)

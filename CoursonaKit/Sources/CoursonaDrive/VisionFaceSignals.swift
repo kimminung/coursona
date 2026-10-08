@@ -22,6 +22,8 @@ public enum VisionFaceSignals {
         public var earRight: Float = 0.28
         public var mouthWidthRatio: Float = 0.25
         public var innerLipsAspect: Float = 0.15
+        /// 입을 다문 중립의 입 벌림 비율 — 0 이 아닐 수 있다(입술 두께·수염). 빼지 않으면 다문 입이 조금 벌어져 보였다(Mac 실측 2026-10-08).
+        public var mouthOpenRatio: Float = 0
         public var browRaiseLeft: Float = 0.12
         public var browRaiseRight: Float = 0.12
         public init() {}
@@ -54,8 +56,8 @@ public enum VisionFaceSignals {
         w[.eyeBlinkLeft] = blink(status.eyeAspectRatioLeft, base: baseline.earLeft)
         w[.eyeBlinkRight] = blink(status.eyeAspectRatioRight, base: baseline.earRight)
 
-        // 입 벌림: 기존 B 등급 게이트가 쓰는 것과 같은 정의(안쪽 입술 높이/바깥 입술 폭). 0.6 을 "최대로 벌림" 기준으로 둔다.
-        w[.jawOpen] = min(1, max(0, status.mouthOpenRatio / 0.6))
+        // 입 벌림: 기존 B 등급 게이트가 쓰는 것과 같은 정의(안쪽 입술 높이/바깥 입술 폭). 중립값을 빼고 0.6 을 "최대로 벌림" 기준으로 둔다.
+        w[.jawOpen] = min(1, max(0, (status.mouthOpenRatio - baseline.mouthOpenRatio) / 0.6))
 
         // 웃음: 입 폭이 중립보다 넓어지면(비대칭은 2D 평면상 구분이 어려워 좌우 동일하게 배분)
         let widen = (status.mouthWidthRatio - baseline.mouthWidthRatio) / max(0.02, baseline.mouthWidthRatio)
@@ -97,6 +99,7 @@ public enum VisionFaceSignals {
         b.earRight = samples.reduce(0) { $0 + $1.eyeAspectRatioRight } / n
         b.mouthWidthRatio = samples.reduce(0) { $0 + $1.mouthWidthRatio } / n
         b.innerLipsAspect = samples.reduce(0) { $0 + $1.innerLipsAspect } / n
+        b.mouthOpenRatio = samples.reduce(0) { $0 + $1.mouthOpenRatio } / n
         b.browRaiseLeft = samples.reduce(0) { $0 + $1.browRaiseLeft } / n
         b.browRaiseRight = samples.reduce(0) { $0 + $1.browRaiseRight } / n
         return b

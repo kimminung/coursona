@@ -25,6 +25,7 @@ struct GalleryView: View {
     @State private var openPackage: CoursonaPackage?
     @State private var openTemplate: BustTemplate?
     @State private var showInspection = false
+    @State private var showMirror = false
 
     @State private var rebuildBundle: CaptureBundle?
     @State private var rebuildTier: CaptureTier = .b
@@ -50,6 +51,9 @@ struct GalleryView: View {
             .navigationDestination(isPresented: $showInspection) {
                 if let openPackage, let openTemplate { InspectionView(package: openPackage, template: openTemplate) }
             }
+            .navigationDestination(isPresented: $showMirror) {
+                if let openPackage, let openTemplate { MirrorView(package: openPackage, template: openTemplate) }
+            }
             .navigationDestination(isPresented: $showRebuild) {
                 if let rebuildBundle { BuildProgressView(bundle: rebuildBundle, tier: rebuildTier, name: rebuildName) }
             }
@@ -71,6 +75,8 @@ struct GalleryView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Button("열기") { Task { await open(entry) } }.buttonStyle(.glass)
+                // UXPRD 화면 8 카드의 "거울로 보기" — 검수를 거치지 않고 바로 라이브 구동(화면 6)으로.
+                Button("거울로 보기") { Task { await open(entry, mirror: true) } }.buttonStyle(.glass)
                 if entry.manifest.includesCaptureBundle {
                     Button("다시 만들기") { Task { await rebuild(entry) } }.buttonStyle(.glass)
                 }
@@ -87,7 +93,7 @@ struct GalleryView: View {
     /// 사진·스플랫 파일 읽기가 몇 초 걸릴 수 있다 — 전부 동기 함수라 `Task.detached` 로 메인 스레드 밖에서
     /// 돌린다(`BuildProgressView.start()` 와 같은 이유, 실기기에서 "System gesture gate timed out" 으로 확인된
     /// 멈춤 재발 방지).
-    private func open(_ entry: Entry) async {
+    private func open(_ entry: Entry, mirror: Bool = false) async {
         busyID = entry.id
         defer { busyID = nil }
         // `entry` 자체(Sendable 선언 없는 로컬 struct)가 아니라 필요한 값(URL, Sendable)만 복사해 닫음에 넘긴다.
@@ -101,7 +107,7 @@ struct GalleryView: View {
             }.value
             openTemplate = template
             openPackage = pkg
-            showInspection = true
+            if mirror { showMirror = true } else { showInspection = true }
         } catch {
             errorText = "열기 실패: \(error.localizedDescription)"
         }

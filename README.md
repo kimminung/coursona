@@ -2,7 +2,7 @@
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
 
-> 상태(2026-10-08 밤): **구현 중 — C0·C1·C2·C4 완료, C3·C5·C6·C8 진행 중, 다음 단계는 실기기 재검증**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **140개 전부 통과**). 캡처(A/B/C 등급)→피팅→텍스처→패키지 저장→검수 화면까지 **처음부터 끝까지 한 바퀴 실제로 돈다** — Mac(B 등급)과 **실제 iPhone 16(TrueDepth A 등급)** 둘 다에서 코르소나를 만들어 봤고, iPhone 에서 만든 `.coursona` 를 AirDrop 으로 Mac 에 가져와 검수했다. 블렌더 5.2 헤드리스로 만든 Persona 재현 에셋(머리카락·칼라 셔츠·눈알·입안)이 붙고, 유령 룩(반투명·가장자리 소멸·하단 페이드) 셰이더로 그린다. 입체감용 가우시안 스플랫은 **폐기**했다(iOS 에 API 가 없고 세 겹이 따로 보이는 문제 — 지금은 머리부터 어깨까지 한 메시·한 텍스처). 실기기 A 등급 캡처로 드러난 네 가지(어깨 틈·시선·겹침 배지·헤어라인)는 시뮬레이터에서 고쳤고(아래 "실기기 캡처 검수"), **실기기 재설치 후 확인이 다음 할 일**이다 — 체크리스트를 아래에 적어 뒀다. 거울(라이브 구동 화면)·기기 간 전송·접근성(UI 4~6단계)은 아직이다. 상세 현황은 `Docs/Tasks.md`.
+> 상태(2026-10-08 밤): **구현 중 — C0·C1·C2·C4 완료, C3·C5·C6·C8 진행 중, 다음 단계는 실기기 재검증**. `CoursonaKit` 패키지가 실제로 빌드되고 테스트가 돈다(Swift Testing **140개 전부 통과**). 캡처(A/B/C 등급)→피팅→텍스처→패키지 저장→검수 화면까지 **처음부터 끝까지 한 바퀴 실제로 돈다** — Mac(B 등급)과 **실제 iPhone 16(TrueDepth A 등급)** 둘 다에서 코르소나를 만들어 봤고, iPhone 에서 만든 `.coursona` 를 AirDrop 으로 Mac 에 가져와 검수했다. 블렌더 5.2 헤드리스로 만든 Persona 재현 에셋(머리카락·칼라 셔츠·눈알·입안)이 붙고, 유령 룩(반투명·가장자리 소멸·하단 페이드) 셰이더로 그린다. 입체감용 가우시안 스플랫은 **폐기**했다(iOS 에 API 가 없고 세 겹이 따로 보이는 문제 — 지금은 머리부터 어깨까지 한 메시·한 텍스처). 실기기 A 등급 캡처로 드러난 네 가지(어깨 틈·시선·겹침 배지·헤어라인)는 시뮬레이터에서 고쳤고(아래 "실기기 캡처 검수"), **실기기 재설치 후 확인이 다음 할 일**이다 — 체크리스트를 아래에 적어 뒀다. 거울(라이브 구동, 화면 6)은 **Mac 에서 실제 카메라로 눈·입이 따라오는 것까지 확인**했다(아래 "거울"). 기기 간 전송·접근성(UI 5~6단계)은 아직이다. 상세 현황은 `Docs/Tasks.md`.
 
 ## 한 줄 요약
 
@@ -196,6 +196,16 @@ iPhone 없이도 실기기 결과를 들여다볼 방법을 찾았다: iPhone �
 
 이 과정에서 나온 **가장 중요한 발견**: 앱이 `MeshResource.Part.textureCoordinates1` 에 써서 다시 만든 uv1 이 **셰이더에 전혀 닿지 않고 있었다**. 셔츠의 presence 를 전부 0 으로 구워도 셔츠가 그대로 그려지는 실험으로 확인했다. 그동안 "턴테이블에선 presence 끔"·셔츠 하단 페이드 수치·헤어라인 페이드가 모두 조용히 무시되고 블렌더가 구운 uv1 이 쓰이고 있었고, 유령 룩을 꺼도 셔츠 아래가 투명해 "가슴이 맨살"로 보이던 진짜 이유도 이것(블렌더 presence 의 z 페이드)이었다. 에셋 메시를 `LowLevelMesh`(position·normal·uv0·uv1 시맨틱)로 다시 만드는 방식으로 바꿔 해결했다 — 이제 유령 룩을 끄면 셔츠가 네이비로 꽉 찬다(위 포즈 몽타주 다섯 번째). 전부 `swift test` 140/140, Mac·iPhone·시뮬레이터 빌드 통과.
 
+### 거울(화면 6) — 라이브 구동, Mac 카메라로 첫 확인 (2026-10-08 밤)
+
+갤러리나 검수 화면의 "거울로 보기"를 누르면 흉상이 내 표정을 따라 움직인다. Mac(일반 카메라)은 Vision 얼굴 랜드마크 76점에서 눈 깜빡임·입 벌림·웃음·눈썹·시선 12가지를 뽑아 2초 중립 캘리브레이션 기준으로 상대값을 내고(`VisionFaceDriver`), 마이크 음량이 입모양을 보완한다. iPhone(Face ID)은 ARKit 표정 52개를 그대로 쓴다(코드는 있고 빌드되지만 **실기기에서 아직 안 돌려봤다**). 아래는 실제 Mac 화면이다 — 좌하단 PiP(실제 카메라 피드)는 README 에선 가렸다.
+
+| Mac — 거울(화면 6): 소스 배지·기준 자세 보정·PiP·하단 바 |
+|---|
+| <img src="Docs/screenshots/c8-ui4-mac-mirrorview.png" alt="코르소나 앱, Mac — 거울 화면. 상단 '실시간 구동 중 · 카메라 · 카메라 표정 12개 + 마이크 입모양 · 39fps' 배지, '기준 자세 보정 완료' 버튼, 좌하단 PiP(가림), 하단 카메라/마이크/PiP/기준 자세/공유/닫기 바" width="720"> |
+
+이 화면이 **이 프로젝트에서 라이브 추적이 실제로 도는 걸 처음 본 순간**이다(그동안은 카메라 권한 대화상자를 자동으로 못 눌러 코드만 있었다). 첫 실행에서 흉상이 눈을 계속 감고 있고 입이 살짝 벌어져 있었는데 — 화면이 뜨는 2초 동안 사용자가 머리를 만지며 찡그리고 있어 그 상태가 "중립 기준"이 된 것이었다. "기준 자세 재설정"을 누르니 바로 정상. 그래서 ① 양쪽 눈을 3초 넘게 감은 것으로 보이면 기준이 틀렸다고 보고 자동으로 다시 잡고, ② 다문 입의 입 벌림 비율을 기준에서 빼도록 고쳤다. 지연(ms)은 재지 않고 구동 루프 fps 만 보여준다(디버그 빌드·CPU 블렌드로 39~43 fps).
+
 #### 🧪 다음 실기기 세션 체크리스트 (iPhone 16 에 재설치 후)
 
 - [ ] 갤러리에서 기존 A 등급 코르소나를 열어 **양 어깨에 피부색 틈이 없는지**, 회전 슬라이더 ±45°·±90° 에서도 그런지 — 위 몽타주와 같은 모습이어야 한다.
@@ -204,6 +214,7 @@ iPhone 없이도 실기기 결과를 들여다볼 방법을 찾았다: iPhone �
 - [ ] 유령 룩을 끄면 셔츠가 아래까지 네이비인지(밑단 아래 2 cm 피부 띠는 에셋 밑단 높이라 아직 남는다 — 정상).
 - [ ] **새로 한 번 더 촬영**해서 빌드가 끝까지 도는지, 콘솔에 `ARSession ... retaining ARFrames` 경고가 더 안 뜨는지(프레임 누수 수정 `c7de5f2` 의 첫 실기기 확인).
 - [ ] 저장·보내기에서 AirDrop 으로 Mac 에 보내기 — 받는 Mac 의 다운로드 폴더에 **같은 이름의 파일이 있으면 미리 지울 것**(그게 "AirDrop이 실패함"의 실제 원인이었다).
+- [ ] **거울(화면 6)을 iPhone 에서 처음 실행** — 배지가 "TrueDepth · Face ID 표정 52개"로 뜨는지, 고개를 좌우로 돌릴 때 흉상이 **같은 쪽**(거울처럼)으로 도는지(ARKit 머리 자세 축·부호는 실기기 미확인 🧪), 눈 깜빡임·입 벌림이 따라오는지.
 
 ## 예상 시나리오 — 등급별 한 걸음씩
 
@@ -315,7 +326,7 @@ CoursonaKit/             로컬 Swift 패키지 — 실제로 빌드·테스트�
   Sources/CoursonaFace           얼굴면 완성 — CapBuilder(눈·입 구멍 닫기)·SelfIntersectionCheck
   Sources/CoursonaTexture        투영·접합·탈조명·채움(Metal + CPU), 캡까지 같은 파이프라인으로 투영, 머리색 추정
   Sources/CoursonaRig            BustEntity(LowLevelMesh, 52 셰이프 블렌딩, 캡 머티리얼, 유령 룩, 포즈별 겹침 검사)·PersonaAssets(헤어·셔츠·눈알·입안 부착, 레스트→피팅 변환, uv1 굽기)·PersonaSurfaceShader·FaceRig·ClipPlayer
-  Sources/CoursonaDrive          라이브 구동 — ARKitFaceDriver(iOS)·VisionFaceDriver(Mac 기본)·MicVisemeDriver·FaceDriverCoordinator(우선순위 합성) 구현됨, 실추적은 미검증
+  Sources/CoursonaDrive          라이브 구동 — ARKitFaceDriver(iOS)·VisionFaceDriver(Mac 기본, 2초 캘리브레이션·자동 재보정)·MicVisemeDriver·FaceDriverCoordinator(우선순위 합성, 카메라/마이크 토글, PiP 프레임) — Mac 실추적 확인, iPhone 은 미확인
   Sources/CoursonaIO             .coursona 패키지(UTI 선언 포함)·캡처 번들·템플릿 캐시·zip·Bonjour 전송(화면 미연결)
   Sources/CoursonaStudio         PersonaBuildPipeline — 캡처 번들→피팅→텍스처→패키지 저장 오케스트레이션, PersonMatte
   Sources/CoursonaValidate · coursona-validate   템플릿·에셋 계약 검사 라이브러리 + CLI(--fit·--texture·--synthetic·--with-usdz)
@@ -325,10 +336,12 @@ coursona/                Xcode 앱 타깃 — 등급 선택→캡처→빌드→
   Views/StartTierView.swift   화면 1 — 등급 3가지 카드 + 추천 배지
   Views/CaptureGuideView.swift 화면 2(A/B 공용) · Views/PhotoSuitabilityView.swift 화면 3(C 등급)
   Views/BuildProgressView.swift 화면 4 — 4단계 체크리스트
-  Views/InspectionView.swift  화면 5 — RealityView 뷰포트, 포즈 세그먼트, 회전 슬라이더, 유령 룩 토글, 포즈별 겹침 배지, 품질 카드, Persona 에셋 부착
-  Views/SaveShareView.swift   화면 6b — 이름 바꾸기, 자동 내보내기 + ShareLink(AirDrop)
-  Views/GalleryView.swift     화면 8 — 저장된 .coursona 목록, 열기·다시 만들기
-  Views/PermissionsView.swift 화면 9 · Views/ComingSoonView.swift  거울·전송 자리표시자
+  Views/InspectionView.swift  화면 5 — RealityView 뷰포트, 포즈 세그먼트, 회전 슬라이더, 유령 룩 토글, 포즈별 겹침 배지, 품질 카드, "거울로 보기"
+  Views/MirrorView.swift      화면 6 — 라이브 구동(FaceDriverCoordinator 60 Hz 루프), 소스 배지, 캘리브레이션 오버레이, PiP, 하단 바
+  Views/PersonaStage.swift    검수·거울이 공유하는 흉상 무대(카메라·조명·텍스처·유령 룩·Persona 에셋 부착)
+  Views/SaveShareView.swift   화면 7 — 이름 바꾸기, 자동 내보내기 + ShareLink(AirDrop)
+  Views/GalleryView.swift     화면 8 — 저장된 .coursona 목록, 열기·거울로 보기·다시 만들기
+  Views/PermissionsView.swift 화면 9 · Views/ComingSoonView.swift  정밀도·기기 연동 탭 자리표시자
   Shaders/PersonaSurface.metal   Persona 에셋(presence·프레넬·하단 페이드·알파 소프트닝)과 흉상 유령 룩 표면 셰이더
   Info.plist               .coursona UTI(com.coulson.coursona.persona) 선언, Bonjour 서비스
   Resources/Templates/Default.coursonatemplate   초상 흉상 템플릿 + Persona 에셋(Template.usdz·library·textures·coursona_assets.json), 44MB
@@ -344,7 +357,7 @@ swift build        # 11개 모듈 + CLI 빌드
 swift test          # 140개 테스트 — 피팅(밀집+단안)·텍스처(합성 번들)·빌드 파이프라인 왕복·전송·얼굴면 분리·자기교차 검사·선택 컷 직접 치환(F7)·사진 적합성·깊이 검증·인물 매트 샘플링·방향 기록·캡 UV 섬·1€ 필터·Vision 얼굴 신호·에셋 매니페스트까지 전부 로컬에서 돈다(약 4분)
 ```
 
-앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·실제 iPhone·iPhone 시뮬레이터로 빌드된다. 등급 선택→캡처→빌드→검수→저장·AirDrop→갤러리까지 동작하고, 거울(라이브 구동)·기기 간 전송·접근성은 이어서 만드는 중이다. Persona 에셋을 다시 만들려면 `Docs/coursona_blender/`(Blender 5.2) → `tools/make_default_template.sh`.
+앱(`coursona` 스킴)은 Xcode 에서 열어 macOS·실제 iPhone·iPhone 시뮬레이터로 빌드된다. 등급 선택→캡처→빌드→검수→거울(라이브 구동)→저장·AirDrop→갤러리까지 동작하고, 기기 간 전송·접근성은 이어서 만드는 중이다. Persona 에셋을 다시 만들려면 `Docs/coursona_blender/`(Blender 5.2) → `tools/make_default_template.sh`.
 
 ## 로드맵
 
@@ -356,9 +369,9 @@ swift test          # 140개 테스트 — 피팅(밀집+단안)·텍스처(합�
 | C3 | 캡처 A/B/C | 🔄 — 선택 2컷 게이팅·F7·C 등급 사진 적합성 검사·저장 전 깊이 검증·B 등급 캡처 품질·인물 매트 게이트·iPad 가로 거치 기록 완료, 카메라 보정 데이터(의도적 보류)·Vision 조밀 대응·단안 깊이 모델·전체 인물 매트(OS 27+)·🧪 실기기 체크리스트는 남음 |
 | C4 | 단안 피팅(B·C 등급) | ✅ (코드·테스트는 C0 포팅분이 이미 만족, 🧪 실기기 빌드만 남음) |
 | C5 | 텍스처·입체감 | 🔄 — 캡 전용 UV 섬·눈입 캡 투영(T-502) 완료. 스플랫(T-503~504b)은 **폐기**, 입체감 v3(한 메시·한 텍스처 + 유령 룩) + Persona 재현 에셋(D 절: 헤어·셔츠·눈알·입안, 블렌더 헤드리스 생성, 레스트→피팅 배치, uv1 LowLevelMesh 굽기)으로 대체. 남은 것: 헤어라인·가르마 캡(블렌더 과제), 실기기 성능(T-505) |
-| C6 | 라이브 구동(거울) | 🔄 — 드라이버 3종 + 우선순위 합성(T-601~603)·`FaceRigSystem` 합성 규칙·시선(눈알 회전, 부호 수정 완료) 구현, 거울 화면(T-808)·실기기 실추적·성능 실측(T-605)은 남음 |
+| C6 | 라이브 구동(거울) | 🔄 — 드라이버 3종 + 우선순위 합성(T-601~603)·`FaceRigSystem` 합성 규칙·시선(눈알 회전, 부호 수정 완료)·거울 화면(T-808) 구현, **Mac 실제 카메라로 눈·입 추적 확인**. iPhone(ARKit) 실기기 확인·지연 실측(T-605)은 남음 |
 | C7 | 패키지·업그레이드 병합·플랫폼 동일성 | 🔄 — `.coursona` UTI 선언·AirDrop 내보내기 실기기 확인(iPhone→Mac), 병합·6자리 코드 전송은 남음 |
-| C8 | 검수·마감 + 화면 UI(UXPRD 9개 화면) | 🔄 — UI 1~3단계(T-805~807)·갤러리·실기기 버그 수정(T-807b, D-508) 완료, 거울·전송·접근성(T-808~810)은 이어서 진행 중 |
+| C8 | 검수·마감 + 화면 UI(UXPRD 9개 화면) | 🔄 — UI 1~3단계(T-805~807)·갤러리·실기기 버그 수정(T-807b, D-508)·거울 화면(T-808 전반) 완료, 라이브러리 요소(썸네일·필터·업그레이드 리본)·전송·접근성(T-808 후반~810)은 이어서 진행 중 |
 
 세부 작업 단위는 `Docs/Tasks.md` 참고.
 
