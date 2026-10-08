@@ -12,6 +12,8 @@ import CoursonaCore
 import CoursonaIO
 
 struct GalleryView: View {
+    @Environment(AppModel.self) private var model
+
     private struct Entry: Identifiable {
         let folder: URL
         let manifest: CoursonaManifest
@@ -45,6 +47,10 @@ struct GalleryView: View {
             .navigationTitle("갤러리")
             .toolbar { ToolbarItem(placement: .primaryAction) { Button { reload() } label: { Image(systemName: "arrow.clockwise") } } }
             .task { reload() }
+            // `.coursona` 를 전송·AirDrop 으로 받아 들여올 때마다(`AppModel.importPersona`) 바뀐다 — 토큰 자체엔
+            // 뜻이 없고 "다시 스캔하라"는 신호일 뿐(`reload()` 에 FS 감시·알림이 없어서 수동으로 깨워야 한다).
+            .onChange(of: model.galleryReloadToken) { reload() }
+            .onChange(of: model.importError) { _, new in if let new { errorText = new; model.importError = nil } }
             .alert("오류", isPresented: .constant(errorText != nil), presenting: errorText) { _ in
                 Button("확인") { errorText = nil }
             } message: { Text($0) }

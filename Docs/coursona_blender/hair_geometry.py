@@ -24,6 +24,9 @@ LAYERS = (
     dict(name="outer", h0=0.0135, count=88, width=0.018, cells=("medium", "wavy", "split", "wispy"), curl=0.12, min_d=0.012, pref="high", length=None, twist=0.25),
     dict(name="frame", h0=0.0050, count=12, width=0.015, cells=("medium", "wavy"), curl=0.08, min_d=0.009, pref="frame", length=0.30, twist=0.12),
     dict(name="baby",  h0=0.0022, count=70, width=0.007, cells=("wispy",), curl=0.0, min_d=0.006, pref="hairline", length=0.055, twist=0.0),
+    # 가르마 자리: part_reject 가 다른 레이어를 전부 금지하는 좁은 띠(part_gap) 안을 드문드문 얇게 채운다 —
+    # 전엔 그 띠가 완전히 비어 있어 평평한 캡 판이 그대로 보였다(D-508④).
+    dict(name="part",  h0=0.0020, count=22, width=0.006, cells=("wispy",), curl=0.0, min_d=0.005, pref="part", length=0.06, twist=0.0),
 )
 
 DEFAULTS = dict(
@@ -146,6 +149,8 @@ def simulate_strand(root, s, surface, face, P, layer, rng, head_c, L_target):
     name = layer["name"]
     if name == "baby":
         comb = s * X * 0.9 + Y * 0.9 - up * 0.25      # 헤어라인 잔머리: 뒤·옆으로 쓸어 넘김
+    elif name == "part":
+        comb = s * X * 1.3 + Y * 0.1 - up * 0.4       # 가르마: 자기 쪽으로 눕듯이 옆으로 갈라짐
     elif name == "frame":
         comb = s * X * 0.30 + Y * 0.05 - up * 1.0     # 얼굴 옆으로 곧장 떨어지는 앞머리
     elif front:
@@ -164,8 +169,8 @@ def simulate_strand(root, s, surface, face, P, layer, rng, head_c, L_target):
     layer_h = layer["h0"]
     for _ in range(int(P["max_len"] / P["step"]) + 4):
         wg = 0.22 + 0.78 * _smoothstep(0.0, 0.11, L)
-        if name == "baby":
-            wg *= 0.35                                 # 잔머리는 두피를 따라간다(중력 약하게)
+        if name in ("baby", "part"):
+            wg *= 0.35                                 # 잔머리·가르마는 두피를 따라간다(중력 약하게)
         radial = np.array([p[0] - head_c[0], p[1] - head_c[1], 0.0])
         radial = _norm(radial)
         spread = radial * P["a_line"] * _smoothstep(ear_z, ear_z - 0.09, p[2])
@@ -180,12 +185,12 @@ def simulate_strand(root, s, surface, face, P, layer, rng, head_c, L_target):
         L += P["step"]
         top = P["crown_flatten"] + (1 - P["crown_flatten"]) * _smoothstep(head_c[2] + 0.10, head_c[2], p_new[2])
         h = layer_h * top * _smoothstep(0.0, 0.025, L) + P["root_offset"] * (1 - _smoothstep(0.0, 0.025, L))
-        if name != "baby":
+        if name not in ("baby", "part"):
             h += P["volume_gain"] * _smoothstep(0.03, 0.14, L)
         q, n, d = surface.nearest(p_new)
         if d < h:
             p_new = push_out(q + n * h, h, surface)
-        elif d > h + 0.006 and (p_new[2] > hug_z or name == "baby"):
+        elif d > h + 0.006 and (p_new[2] > hug_z or name in ("baby", "part")):
             p_new = p_new + (q + n * h - p_new) * 0.5
         fx, st = face.steer(p_new, s)
         if fx is not None:
@@ -355,10 +360,12 @@ def build_hair(scalp, patch_pts, surface, head_c, chin_z, brow_z, params=None, l
         elif pref == "frame":      # 가르마 옆 앞 헤어라인
             wts = (_smoothstep(0.03, 0.004, tb) * (ty < head_c[1] - 0.045)
                    * (np.abs(tx - part) > 0.008) * (np.abs(tx - part) < 0.05))
+        elif pref == "part":       # 가르마 띠 안쪽(다른 레이어는 금지된 자리)만, 크라운·앞쪽에 한정
+            wts = ((np.abs(tx - part) < P["part_gap"] * 1.3) * (ty < head_c[1] + 0.03) * (tz > head_c[2] + 0.02))
         else:
             wts = np.ones(len(tris))
         roots = sample_roots(tris, np.asarray(wts, float), layer["count"], layer["min_d"], rng,
-                             reject=None if pref in ("hairline", "frame") else part_reject)
+                             reject=None if pref in ("hairline", "frame", "part") else part_reject)
         made = 0
         if len(roots) == 0:
             stats["layers"][layer["name"]] = 0
@@ -375,14 +382,14 @@ def build_hair(scalp, patch_pts, surface, head_c, chin_z, brow_z, params=None, l
                 stats["strands_short"] += 1
                 continue
             ci = int(np.argmin(np.linalg.norm(clump_c - r, axis=1)))
-            amp = rng.uniform(0.7, 1.15) * (0.25 if layer["name"] == "baby" else 1.0)
+            amp = rng.uniform(0.7, 1.15) * (0.25 if layer["name"] in ("baby", "part") else 1.0)
             wav = add_waves(cl, head_c, P, clump_phase[ci] + rng.normal(0, 0.35), amp, clump_lam[ci])
             Ls = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(wav, axis=0), axis=1))])
             hmin = np.maximum(P["root_offset"], layer["h0"] * 0.85 * _smoothstep(0.0, 0.03, Ls))
             wav = enforce_clearance(wav, surface, hmin, face=face, s=s)
-            nseg = P["segments"] if layer["name"] != "baby" else 6
+            nseg = P["segments"] if layer["name"] not in ("baby", "part") else 6
             cen, Ltot = resample(wav, nseg)
-            if Ltot < (0.02 if layer["name"] == "baby" else 0.05):
+            if Ltot < (0.02 if layer["name"] in ("baby", "part") else 0.05):
                 stats["strands_short"] += 1
                 continue
             cell = layer["cells"][int(rng.integers(len(layer["cells"])))]

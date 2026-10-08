@@ -102,6 +102,20 @@ public enum CoursonaPackageStore {
     public static func archive(folder: URL, to url: URL) throws { try ZipArchive.zipFolder(folder).write(to: url) }
     public static func unarchive(_ url: URL, to folder: URL) throws { try ZipArchive.unzip(Data(contentsOf: url), to: folder) }
 
+    /// `archive`/`ShareLink`(AirDrop)·`CoursonaTransfer` 로 받은 `.coursona` zip 하나를 `Documents/Personas/`
+    /// 로 들여온다 — 임시 폴더에 풀어 `read`(템플릿 검사 포함)로 한 번 검증한 뒤, 패키지 안의 `manifest.id`
+    /// 그대로 `defaultFolder(for:)` 에 쓴다. 같은 페르소나를 다시 받으면(재전송·재내보내기) 새 항목이 느는 대신
+    /// 그 자리에서 덮어써진다 — 전송 쪽엔 "이미 들여왔는지" 추적이 없어서(`CoursonaTransfer` 머리말) 멱등하게
+    /// 만들어 둔 것. 촬영 원본이 함께 담겨 있었다면 그대로 이어서 들여온다.
+    public static func importArchive(from url: URL, expectedTemplate: TemplateManifest? = nil) throws -> CoursonaPackage {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try unarchive(url, to: tmp)
+        let pkg = try read(from: tmp, expectedTemplate: expectedTemplate)
+        try write(pkg, to: defaultFolder(for: pkg.manifest.id), captureBundle: readCaptureBundle(from: tmp))
+        return pkg
+    }
+
     /// Documents/Personas/<uuid>/
     public static func defaultFolder(for id: UUID) -> URL {
         defaultRoot.appendingPathComponent(id.uuidString + ".coursona", isDirectory: true)

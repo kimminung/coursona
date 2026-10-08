@@ -17,7 +17,8 @@ DEFAULTS = dict(
     body_offset=0.0035,          # 셔츠 몸판: 피부에서 3.5 mm
     body_min_clear=0.0028,
     smooth_iters=6, smooth_lambda=0.45,   # 쇄골 오목 등 해부 굴곡을 천처럼 덮기
-    tuck_clear=0.0008,           # 아래·팔 절단면 안쪽 접기 높이
+    tuck_clear=0.0008,           # 아래·팔 절단면 안쪽 접기 높이(팔 둘레에만 적용 — 아래 밑단은 hem_extend_rows)
+    hem_extend_rows=3,          # 밑단을 Bust 바닥 절단면까지 몸판과 같은 간격으로 걸어 내려가는 단수
     stand_h_front=0.018, stand_h_back=0.024, stand_rows=4,
     stand_clear0=0.0045, stand_clear1=0.0055,
     fold=0.0025,
@@ -290,9 +291,38 @@ def build_shirt(bust_V, bust_F, bust_N, region_mask, surface, params=None, log=p
     srcs = list(src)
     base = len(V)
     n_body_f = len(faces)
-    # 아래·팔 절단면: 안쪽으로 접어 틈을 닫는다
+    # 아래·팔 절단면: 안쪽으로 접어 틈을 닫는다. 그중 평균 Z 가 가장 낮은 고리 = 몸통 밑단 — 거기만
+    # Bust 자신의 바닥 절단면까지 몸판과 같은 간격(body_offset/body_min_clear)으로 걸어 내려간다. 전에는
+    # 팔 둘레와 똑같이 살짝 접기만 해서, 유령 룩을 끄면 밑단과 흉상 절단면 사이에 피부 띠가 보였다(D-508④).
     tuck_n = 0
+    hem_loop = min(loops[1:], key=lambda L: V[L, 2].mean()) if len(loops) > 1 else None
+    z_floor = float(bust_V[:, 2].min()) + P["body_min_clear"]
     for L in loops[1:]:
+        if L is hem_loop and (V[L, 2].mean() - z_floor) > 0.004:
+            rows_n = max(1, P["hem_extend_rows"])
+            m = len(L)
+            cur = [push_out(bust_V[src[vi]] + bust_N[src[vi]] * P["body_offset"], P["body_min_clear"], surface) for vi in L]
+            z0 = np.array([p[2] for p in cur])
+            prev_idx = list(L)
+            for r in range(1, rows_n + 1):
+                t = r / rows_n
+                new_ring = []
+                for j in range(m):
+                    tz = z0[j] + (z_floor - z0[j]) * t
+                    q, nn, _ = surface.nearest(np.array([cur[j][0], cur[j][1], tz]))
+                    p = push_out(q + nn * P["body_offset"], P["body_min_clear"], surface)
+                    cur[j] = p
+                    new_ring.append(p)
+                    srcs.append(src[L[j]])
+                    kind.append(1)
+                verts.append(np.asarray(new_ring))
+                new_idx = list(range(base, base + m))
+                for k in range(m):
+                    faces.append((prev_idx[k], prev_idx[(k + 1) % m], new_idx[(k + 1) % m], new_idx[k]))
+                base += m
+                tuck_n += m
+                prev_idx = new_idx
+            continue
         ring = []
         for vi in L:
             s = src[vi]

@@ -33,7 +33,10 @@ MASK = "T_Hair_LongWave_mask.png"       # R 뿌리→끝, G 가닥 id, B 하이�
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def scalp_submesh(bust, R):
+def scalp_submesh(bust, R, surface=None, front_push=0.015):
+    """`surface`(전체 Bust 표면)를 주면, 이마 쪽(법선이 −Y)을 향하는 테두리 정점만 그 방향으로
+    `front_push`(기본 15 mm) 민 뒤 표면에 다시 붙인다 — Scalp 그룹 페인트가 이마 표면보다 안쪽에서
+    끝나 캡 앞 테두리가 두개골 속에 묻혀 보이던 문제(D-508④, 실측 1–2 cm). 옆·뒤 테두리는 손대지 않는다."""
     w = C.group_weights(bust, "Scalp")
     if not (w > 0.5).any():
         raise RuntimeError("Bust 에 Scalp 버텍스 그룹이 없거나 비어 있다")
@@ -51,7 +54,15 @@ def scalp_submesh(bust, R):
     for (a, b), c in edge.items():
         if c == 1:
             boundary[a] = boundary[b] = True
-    return dict(v=R["V"][used], n=R["N"][used], faces=sf, boundary=boundary)
+    v = R["V"][used].copy()
+    n = R["N"][used].copy()
+    if surface is not None and front_push > 0:
+        front = boundary & (n[:, 1] < -0.25)
+        fwd = np.array([0.0, -1.0, 0.0])
+        for i in np.where(front)[0]:
+            q, qn, _ = surface.nearest(v[i] + fwd * front_push)
+            v[i], n[i] = q, qn
+    return dict(v=v, n=n, faces=sf, boundary=boundary)
 
 
 def head_frame(bust, arm, R, scalp):
@@ -179,7 +190,7 @@ def run(attach_mode="BONE", params=None, template_dir=None, write_library=True, 
     arm.data.pose_position = "REST"
     try:
         R = C.bust_rest(bust)
-        scalp = scalp_submesh(bust, R)
+        scalp = scalp_submesh(bust, R, surface=C.BVHSurface(R["V"], R["F"]))
         patch, head_c, chin_z, brow_z = head_frame(bust, arm, R, scalp)
         C.log("머리 중심", head_c.round(4), "턱", round(chin_z, 4), "눈썹", round(brow_z, 4),
               "두피 정점", len(scalp["v"]))

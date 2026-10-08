@@ -137,6 +137,13 @@ struct SaveShareView: View {
         isSaving = true
         defer { isSaving = false }
         package.manifest.name = name
+        // 트루뎁스(A 등급) 기준 고정: 내 이름을 저장하면 그 이름 아래 지금 스케일을 기준으로 남기고,
+        // Mac·사진(B·C 등급)은 그 이름이 포함된 기준이 있으면 단안 추정 스케일 대신 그 실측 스케일을 쓴다.
+        if package.manifest.tier == .a {
+            TrueDepthAnchorStore.upsert(personaID: package.manifest.id, name: name, scale: package.identity.scale)
+        } else if let scale = TrueDepthAnchorStore.matchedScale(for: name) {
+            package.identity.scale = scale
+        }
         try? CoursonaPackageStore.write(package, to: folder)
     }
 
