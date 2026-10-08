@@ -14,6 +14,8 @@
 | **B** | 일반 전면 카메라 | Mac 전부, Face ID 없는 iPhone·iPad | 얼굴 치수는 추정, 나중에 A 로 업그레이드 가능 |
 | **C** | 사진 1장 | 전부 | 정면만 측정, 옆모습은 추정, 가장 빠름 |
 
+> **TrueDepth 는 라이다(LiDAR)가 아니다.** Face ID 카메라(TrueDepth)는 적외선 점 패턴을 얼굴에 투사하고 그 왜곡을 적외선 카메라로 읽는 방식(구조광)이다 — 아이폰 뒷면 카메라의 라이다(빛의 왕복 시간을 재는 ToF 센서, Pro 기종에만 있음)와는 센서도 원리도 다르다. 그래서 **라이다가 없는 iPhone 16(Pro 아님)도 앞면에 TrueDepth 가 있어서 A 등급**이 된다 — A 등급 판정은 `FaceCaptureSession.isSupported`(`ARFaceTrackingConfiguration.isSupported` + TrueDepth 하드웨어 여부)만 본다(`TierClassifier.swift`), 라이다는 어디서도 확인하거나 쓰지 않는다.
+
 초상(Chosang) 프로젝트에서 검증한 "블렌더 흉상 + ARKit 패치 치환" 피팅은 그대로 가져오되, **눈알·입안을 따로 띄워 생기던 돌출·어긋남을 없앤다** — 분리된 물체 대신 같은 메시 안에서 눈·입 구멍을 자연스럽게 닫는다. 얼굴면만 또렷하게 보이고 나머지(머리·목·어깨)는 입체감만 있는 투명한 흉상으로 완성한다.
 
 ## 지금까지 구현된 것 (C0·C1·C2)
