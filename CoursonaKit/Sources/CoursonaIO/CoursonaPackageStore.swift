@@ -8,6 +8,7 @@
 
 import Foundation
 import CoursonaCore
+import UniformTypeIdentifiers
 
 public struct CoursonaPackage: Sendable {
     public var manifest: CoursonaManifest
@@ -104,5 +105,12 @@ public enum CoursonaPackageStore {
     /// Documents/Personas/<uuid>/
     public static func defaultFolder(for id: UUID) -> URL {
         defaultRoot.appendingPathComponent(id.uuidString + ".coursona", isDirectory: true)
+    }
+}
+
+extension UTType {
+    /// 코르소나 패키지. Info.plist 의 `UTExportedTypeDeclarations`/`CFBundleDocumentTypes` 와 일치해야 한다.
+    public static var coursonaPersona: UTType {
+        UTType(exportedAs: CoursonaPackageStore.uti)
     }
 }

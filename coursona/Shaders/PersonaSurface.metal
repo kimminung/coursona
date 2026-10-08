@@ -51,9 +51,15 @@ void coursonaPersonaSurface(realitykit::surface_parameters params)
 
     // 실루엣 마스크(헤어): 알파 ≤ threshold 는 프래그먼트 자체를 버린다 — 깊이도 안 쓰이게. opacity 를 0 으로만 두면 카드 사각형 전체가
     // 깊이를 써서 뒤의 반투명 흉상(유령 룩)이 가려져 검게 뚫려 보였다(실측 2026-10-07, 3/4 뷰 먼 쪽 볼).
+    //  가장자리는 딱 끊지 않고 threshold 주변(0.6×…1.3×)에서 부드럽게 — 카드 끝·헤어라인이 계단처럼 보이던 것을 가닥 끝처럼
+    //  흐려지게(시뮬레이터 검수 2026-10-08). 그 아래(0.6×)는 여전히 버려 깊이를 안 쓴다.
     float threshold = mc.opacity_threshold();
-    if (threshold > 0.0 && float(base.a) <= threshold) {
-        discard_fragment();
+    if (threshold > 0.0) {
+        float a = float(base.a);
+        if (a <= threshold * 0.6) {
+            discard_fragment();
+        }
+        opacity *= smoothstep(threshold * 0.6, threshold * 1.3, a);
     }
 
     params.surface().set_base_color(color);

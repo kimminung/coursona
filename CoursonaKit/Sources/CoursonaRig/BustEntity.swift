@@ -75,6 +75,14 @@ public final class BustEntity {
     /// 템플릿(레스트) 입 루프 중심 — `Mouth_Inner` 를 피팅된 입 위치로 옮길 때의 기준(init 에서 rawTemplate 로 계산).
     let restMouthCenter: SIMD3<Float>
     let fittedMouthCenter: SIMD3<Float>
+    /// 템플릿 레스트 정점(캡 추가 전, 원본 정점 수) — `template.positions` 는 피팅 좌표라, 에셋을 "레스트 → 피팅" 으로 옮길
+    /// 변환(`PersonaAssets`: 두피 유사변환·어깨 축별 스케일)을 구할 때 이 레스트 좌표가 필요하다.
+    let restPositions: [SIMD3<Float>]
+    /// 캡 가시성(`setCapsHidden`·입 캡 폴백) — `flippedCapTriangles` 가 안 보이는 캡은 세지 않도록.
+    private(set) var eyeCapsHidden = false
+    private(set) var mouthCapHidden = false
+    /// 셔츠 머티리얼 두 벌(하단 페이드 on/off) — 유령 룩 토글에 따라 `applyClothFade` 가 바꿔 끼운다(`PersonaAssets`).
+    var clothFadeSwap: [(entity: Entity, faded: [Material], solid: [Material])] = []
 
     // 유령 룩(디자인 PRD 룩·렌더링 원칙, Tasks.md D-308 ③): 피부 머티리얼(0)의 PBR 원본을 보관해 셰이더 ↔ PBR 을 오간다.
     private var skinPBR: PhysicallyBasedMaterial?
@@ -104,6 +112,7 @@ public final class BustEntity {
             restMouthCenter = centroid(rawTemplate.positions) ?? fallback
             fittedMouthCenter = centroid(fittedTemplate.positions) ?? restMouthCenter
         }
+        restPositions = rawTemplate.positions
         if id.positions.count != template.vertexCount {
             // 캡 이전(또는 다른 템플릿 버전) Identity 를 받으면 늘어난 만큼(캡이 새로 만든 정점) 채운다.
             if id.positions.count < template.vertexCount {
@@ -397,6 +406,7 @@ public final class BustEntity {
         ghostLookOn = on
         if skinPBR == nil { skinPBR = model.components[ModelComponent.self]?.materials.first as? PhysicallyBasedMaterial }
         refreshSkinMaterial()
+        applyClothFade(ghost: on)
         return true
     }
 
@@ -421,9 +431,44 @@ public final class BustEntity {
             pbr.blending = .transparent(opacity: .init(floatLiteral: 0))
             mc.materials[i] = pbr
         }
-        if eyes { hide(eyeCapMaterialIndexLeft); hide(eyeCapMaterialIndexRight) }
-        if mouth { hide(mouthCapMaterialIndex) }
+        if eyes { hide(eyeCapMaterialIndexLeft); hide(eyeCapMaterialIndexRight); eyeCapsHidden = true }
+        if mouth { hide(mouthCapMaterialIndex); mouthCapHidden = true }
         model.components[ModelComponent.self] = mc
+    }
+
+    /// 지금 **보이는** 캡 삼각형 중 주어진 가중치에서 뒤집히는(법선이 레스트와 반대) 수 — `SelfIntersectionCheck` 와 같은
+    /// 근사를 실제 렌더 정점·실제 런타임 델타(Identity 보정 반영)로, 그리고 지금 포즈 하나에 대해 센다.
+    /// 눈·입 에셋이 붙어 투명해진 캡, 입 벌림 폴백으로 숨긴 입 캡은 어차피 안 보이니 제외한다(`includeHidden` 으로 포함 가능).
+    /// 검수 화면의 "겹침" 배지용(2026-10-08): 이전엔 52 셰이프 각각 1.0 의 합(템플릿 자체가 ≈250)을 포즈와 무관하게 보여줘
+    /// 포즈를 바꿔도 숫자가 안 변하고, 보이지도 않는 캡을 "겹침 의심"으로 세고 있었다.
+    public func flippedCapTriangles(weights: ArkitWeights, includeHidden: Bool = false) -> Int {
+        var active: [(Float, [SIMD3<Float>])] = []
+        for (k, s) in shapeOrder.enumerated() { let w = weights[s]; if w > 0.001 { active.append((w, deltas[k])) } }
+        guard !active.isEmpty else { return 0 }
+        let idx = renderMesh.indices
+        func posed(_ v: Int) -> SIMD3<Float> { var p = basePositions[v]; for (w, d) in active where v < d.count { p += d[v] * w }; return p }
+        // `faceSurface.capRanges` 순서 = 눈 왼쪽·눈 오른쪽·입 중 있는 것(init 의 파트 순서와 동일).
+        var kinds: [Bool] = []   // true = 눈 캡, false = 입 캡
+        if capClosure.eyeLeft != nil { kinds.append(true) }
+        if capClosure.eyeRight != nil { kinds.append(true) }
+        if capClosure.mouth != nil { kinds.append(false) }
+        var flipped = 0
+        for (ci, r) in faceSurface.capRanges.enumerated() {
+            if !includeHidden, ci < kinds.count {
+                let isEye = kinds[ci]
+                if isEye && eyeCapsHidden { continue }
+                if !isEye && (mouthCapHidden || (mouthInner == nil && weights[.jawOpen] > 0.05)) { continue }
+            }
+            var k = r.lowerBound
+            while k + 2 < r.upperBound, k + 2 < idx.count {
+                let a = Int(idx[k]), b = Int(idx[k + 1]), c = Int(idx[k + 2])
+                let nRest = simd_cross(basePositions[b] - basePositions[a], basePositions[c] - basePositions[a])
+                let pa = posed(a), pb = posed(b), pc = posed(c)
+                if simd_dot(nRest, simd_cross(pb - pa, pc - pa)) < 0 { flipped += 1 }
+                k += 3
+            }
+        }
+        return flipped
     }
 
     /// `Mouth_Inner` 의 5개 셰이프(jawOpen·jawLeft·jawRight·jawForward·tongueOut) — USD 가 중복 이름에 붙인 접미 숫자
@@ -595,9 +640,11 @@ public final class BustEntity {
     public func applyGaze(_ gaze: SIMD2<Float>) {
         let g = simd_clamp(gaze, SIMD2(repeating: -1), SIMD2(repeating: 1))
         // 입체감 v2: 진짜 눈알이 있으면 캡 UV 대신 눈알을 돌린다. 흉상 공간은 +X 가 피사체 왼쪽(eyeL.x > 0), 정면 +Z.
-        // 피사체 오른쪽(+g.x)을 보려면 +Z 를 −X 쪽으로 → Y축 음(−) 회전; 아래(+g.y)를 보려면 +Z 를 −Y 쪽으로 → X축 양(+) 회전.
+        // `FaceRigSystem.gazeFromWeights` 의 +g.x 는 eyeLookOutLeft+eyeLookInRight = **피사체 왼쪽**(+X) 을 보는 것이라
+        // +Z 를 +X 쪽으로 → Y축 양(+) 회전(이전엔 음(−)이라 눈알이 눈꺼풀 델타와 반대쪽으로 돌았다, 2026-10-08 실기기 캡처 검수).
+        // 아래(+g.y, eyeLookDown)를 보려면 +Z 를 −Y 쪽으로 → X축 양(+) 회전.
         if eyePivotL != nil || eyePivotR != nil {
-            let q = simd_quatf(angle: -g.x * eyeGazeMaxRadians, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: g.y * eyeGazeMaxRadians, axis: SIMD3(1, 0, 0))
+            let q = simd_quatf(angle: g.x * eyeGazeMaxRadians, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: g.y * eyeGazeMaxRadians, axis: SIMD3(1, 0, 0))
             eyePivotL?.orientation = q
             eyePivotR?.orientation = q
             return

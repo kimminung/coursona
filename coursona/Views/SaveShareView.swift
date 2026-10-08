@@ -71,6 +71,9 @@ struct SaveShareView: View {
         }
         .background(Color.coursonaBackground)
         .navigationTitle("저장·보내기")
+        // "내보내기 준비" 를 따로 누르지 않게 화면이 뜨자마자 미리 구워 둔다 — 사용자가 보는 건 바로 에어드랍으로
+        // 이어지는 버튼 하나뿐.
+        .task { if exportURL == nil { await export() } }
     }
 
     private var summaryCard: some View {
@@ -102,16 +105,26 @@ struct SaveShareView: View {
                     Label("내보내기(AirDrop·파일 앱)", systemImage: "square.and.arrow.up").font(.headline).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glassProminent)
-            } else {
+                // AirDrop·iCloud 는 공유 시트가 닫힌 뒤에도 이 파일을 다시 읽는다 — 한참 뒤 재시도하거나 전송이
+                // 실패했다면 새로 구워서 다시 시도해 볼 수 있게.
                 Button { Task { await export() } } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if isExporting { ProgressView().controlSize(.small) }
-                        Label("내보내기 준비", systemImage: "square.and.arrow.up")
+                        Text("전송이 안 되면 다시 만들기")
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent)
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 .disabled(isExporting)
+            } else {
+                // 화면이 뜨자마자 .task 가 export() 를 이미 돌리고 있다 — 여기는 그 준비가 끝나기 전까지만 잠깐 보인다.
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("내보내기 준비 중…")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
             }
             Text("기기 간 6자리 코드로 바로 주고받기는 다음 단계에서 연결됩니다.")
                 .font(.caption2).foregroundStyle(.tertiary).multilineTextAlignment(.center)
@@ -127,13 +140,26 @@ struct SaveShareView: View {
         try? CoursonaPackageStore.write(package, to: folder)
     }
 
+    /// 2026-10-08, 실기기 실측: `FileManager.default.temporaryDirectory` 에 쓴 파일을 `ShareLink` 로 넘기면
+    /// AirDrop·"파일 앱에 저장 후 iCloud Drive로 이동" 이 전부 조용히 실패했다(iPhone 16, iOS 27). 두 경로 다
+    /// **다른 프로세스(AirDrop 데몬·CloudDocs)가 공유 시트가 끝난 뒤 비동기로 파일을 다시 읽는다** — `tmp/` 는
+    /// "쓰는 동안만 보장, 앱이 안 쓰는 동안 시스템이 지울 수 있다"고 문서에 명시돼 있고, 실제로 이 지연된 재접근
+    /// 시점에 파일이 이미 없거나 못 읽는 상태였던 것으로 보인다. 고정 위치(Documents)로 옮기고, 화면이 잠겨도
+    /// 다른 프로세스가 읽을 수 있게 보호 등급도 명시적으로 낮춘다.
+    private var exportsFolder: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Exports", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     private func export() async {
         isExporting = true; exportError = nil
         defer { isExporting = false }
         do {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(package.manifest.name).\(CoursonaPackageStore.fileExtension)")
+            let url = exportsFolder.appendingPathComponent("\(package.manifest.name).\(CoursonaPackageStore.fileExtension)")
             try? FileManager.default.removeItem(at: url)
             try CoursonaPackageStore.archive(folder: folder, to: url)
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.none], ofItemAtPath: url.path)
             exportURL = url
         } catch {
             exportError = "내보내기 실패: \(error.localizedDescription)"

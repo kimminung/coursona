@@ -44,7 +44,10 @@ struct InspectionView: View {
     @State private var holder = InspectionHolder()
     @State private var pose: PosePreset = .neutral
     @State private var showQualityDetail = false
+    /// 지금 포즈에서 **보이는** 캡 중 뒤집힌 삼각형 수(`BustEntity.flippedCapTriangles`) — 배지용. 포즈를 바꾸면 다시 센다.
     @State private var flippedTriangleCount: Int?
+    /// 52 셰이프 각각 1.0 에서 뒤집히는 캡 삼각형의 합(숨겨진 캡 포함, Identity 런타임 델타 기준) — 빌드 품질 참고치, 품질 카드에만.
+    @State private var flippedTriangleTotal: Int?
     /// 드래그로 흉상을 좌우로 돌려 디테일을 점검한다(초상 `TemplatePreviewView.swift` 의 `dragYaw` 와 같은 패턴).
     @State private var dragYaw: Float = 0
     @State private var dragStartYaw: Float = 0
@@ -135,8 +138,9 @@ struct InspectionView: View {
                 }
             }
         }
+        .onChange(of: pose) { _, _ in refreshFlippedCount() }
         .task {
-            flippedTriangleCount = computeFlippedTriangles()
+            flippedTriangleTotal = computeFlippedTriangleTotal()
             // `RealityView` 의 콘텐츠 클로저(`holder.setup`, `holder.bust` 를 채운다)가 이 `.task` 보다 늦게
             // 실행될 수 있다 — 그러면 `applyTexture` 가 `bust == nil` 로 조용히 아무것도 안 하고 끝나고,
             // 재시도가 없어 사진 텍스처가 영영 안 올라가고 기본(살구색) 머티리얼만 남는다(실기기에서 재현:
@@ -152,6 +156,8 @@ struct InspectionView: View {
             // Persona 재현 에셋(Tasks.md D 절): coursona_assets.json 이 있으면 Template.usdz 의 헤어·셔츠·눈·입을,
             // 없으면(옛 템플릿) EyesMouth.usdz 경로 — 텍스처 다음에(캡이 투명해지며 그 자리를 채운다).
             await holder.attachPersonaAssets(package: package)
+            // 눈·입 에셋이 붙으면 그 캡은 투명이라 "겹침" 에서 빠진다 — 붙은 뒤에 센다.
+            refreshFlippedCount()
         }
         .onDisappear { holder.setMic(false) }
     }
@@ -162,7 +168,8 @@ struct InspectionView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(String(format: "관측 비율 %.0f%% · 채움 %.0f%% · 접합 단차 %.1f/255", q.observedRatio * 100, q.filledRatio * 100, q.seamDelta))
                     Text(String(format: "빌드 시간 %.1f초", q.buildSeconds))
-                    if let count = flippedTriangleCount { Text("자기교차 의심 삼각형 \(count)개") }
+                    if let count = flippedTriangleCount { Text("이 포즈에서 보이는 캡 중 뒤집힌 삼각형 \(count)개") }
+                    if let total = flippedTriangleTotal { Text("셰이프별 최대치 합계 \(total)개 (숨겨진 눈·입 캡 포함, 빌드 참고치)") }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -185,9 +192,18 @@ struct InspectionView: View {
         return "일부는 추정해서 채웠어요"
     }
 
-    private func computeFlippedTriangles() -> Int {
+    /// 배지: 지금 포즈 프리셋에서 실제로 보이는 캡의 뒤집힘만 센다(2026-10-08 — 이전엔 52 셰이프 합계를 포즈와 무관하게 보여줘
+    /// 템플릿 자체 수치(≈250)가 "겹침 의심 249곳" 으로 늘 떠 있었고, 눈·입 에셋에 가려 보이지도 않는 캡까지 세고 있었다).
+    private func refreshFlippedCount() {
+        guard let bust = holder.bust else { return }
+        flippedTriangleCount = bust.flippedCapTriangles(weights: pose.weights)
+    }
+
+    /// 품질 카드 참고치: 셰이프별 1.0 뒤집힘 합계 — 템플릿 델타가 아니라 이 페르소나의 런타임 델타(Identity 보정 반영)로.
+    private func computeFlippedTriangleTotal() -> Int {
         var fitted = template
         if package.identity.positions.count == template.vertexCount { fitted.positions = package.identity.positions }
+        fitted.shapeDeltas = package.identity.runtimeDeltas(template: template)
         let capped = CapBuilder.addingCaps(to: fitted)
         return SelfIntersectionCheck.check(capped).reduce(0) { $0 + $1.flippedTriangles }
     }

@@ -42,6 +42,8 @@ public struct PersonaLook: Sendable {
     /// presence(정적 존재 마스크: 정면 1 → 옆 0.46 → 뒤 0, AssetContract §5)를 uv1.x 에 굽는다. 턴테이블 검수처럼 옆·뒤를 봐야 하면
     /// 끈다(1 로 구움) — 켜 두면 3/4 뷰에서 먼 쪽 머리·셔츠가 사라져 속이 비어 보인다(실측 2026-10-07).
     public var presenceEnabled = true
+    /// 두피 캡 테두리(헤어라인) 페이드 폭(m) — 캡 가장자리가 직선으로 끊겨 가발처럼 보이지 않게(2026-10-08). 0 이면 끔.
+    public var hairlineFadeWidth: Float = 0.02
     public init() {}
 }
 
@@ -80,22 +82,25 @@ extension BustEntity {
         var report = PersonaAssetReport()
         guard manifest.isSupported else { report.notes.append("schema '\(manifest.schema)' 미지원(필요 \(CoursonaAssetManifest.supportedSchema))"); return report }
         guard !hasEyesMouth else { report.notes.append("이미 부착됨"); return report }
-        let shader = (look.useGhostShader && Self.canBakeUV1) ? PersonaSurfaceShader.shared : nil
+        let shader = look.useGhostShader ? PersonaSurfaceShader.shared : nil
         report.shader = shader != nil
-        if look.useGhostShader && !Self.canBakeUV1 { report.notes.append("OS 26: uv1 쓰기 불가 → PBR 폴백") }
         let textures = PersonaTextureCache(folder: texturesFolder)
         let m = template.manifest
         let restEyeL = SIMD3<Float>(m.eyeL[0], m.eyeL[1], m.eyeL[2]), restEyeR = SIMD3<Float>(m.eyeR[0], m.eyeR[1], m.eyeR[2])
         let eyeScale = max(0.5, min(2.0, identity.eyeRadius / max(1e-4, m.eyeRadius)))
         var eyesAttached = false, mouthAttached = false
-        // 헤어·셔츠(이하 "default" 분기) 전체 크기 보정(2026-10-08, 실기기 TrueDepth 로 첫 확인):
-        // 사진(B·C 등급)은 `identity.scale` 이 늘 1 로 고정이라(단안 사진은 절대 크기를 모른다, TechPRD §6.3) 이 보정이
-        // 없어도 흉상과 어긋나지 않았지만, A 등급(TrueDepth)은 F1/F3 에서 실제 깊이로 전역 유사변환 스케일 s 를 구한다 —
-        // 그래서 사용자 머리가 블렌더 대리 흉상과 몇 % 라도 다르면, 보정 없는 헤어·셔츠가 실제 크기로 피팅된 흉상과
-        // 어긋나 "두 겹(흉상 레이어 + 머리카락/셔츠 레이어)" 처럼 보였다. Eye_L/R·Mouth_Inner 는 이미 각자 보정이
-        // 있었다(eyeScale·identity.scale clamp) — 헤어·셔츠만 빠져 있었다. Head 조인트 레스트 위치를 축으로 균일
-        // 스케일만 보정한다(이방성 모양 차이까지는 안 고친다 — 그건 부위별 워프가 필요해 범위 밖).
-        let headScale = max(0.6, min(1.6, identity.scale))
+        // 헤어·셔츠(이하 "default" 분기)를 **레스트 흉상 → 피팅 흉상** 으로 옮기는 변환(2026-10-08, 실기기 TrueDepth 캡처로 확인).
+        // 사진(B·C 등급)은 `identity.scale` 이 1 로 고정이라(TechPRD §6.3) 거의 항등이지만, A 등급은 F1/F3 이 실제 깊이로
+        // 스케일 s(실측 1.06)를 구해 흉상이 커진다. 1차 보정(Head 조인트 기준 **균일** 스케일)은 피터가 실제로 한 변환과
+        // 달라 두 가지 결함을 남겼다(시뮬레이터 검수, 2026-10-08):
+        //  · 셔츠 — `HeadPropagator` 는 어깨를 **x·z 만** 원점 기준 s 배(y 그대로) 넓히는데, 균일 스케일은 셔츠의 어깨 경사선을
+        //    y 0.36 기준으로 7 mm 끌어내려 경사 구간에서 흉상 어깨가 최대 15 mm 삐져나왔다(양쪽 어깨 삼각형 구멍).
+        //  · 헤어 — 머리는 전역 유사변환(스케일 1.046 + 평행이동 −25 mm y)로 움직였는데 균일 스케일은 머리카락을 정수리 위
+        //    15 mm·앞 12 mm 로 띄웠다(가발처럼 얹힌 느낌).
+        // 그래서 변환을 흉상 정점에서 직접 읽는다: 두피 그룹의 유사변환(`Procrustes`)으로 Head 강체 에셋을, 어깨 그룹의 축별
+        // 최소제곱 스케일+이동으로 셔츠를 옮긴다 — 피터가 무엇을 했든 그 결과(정점)에 맞춘다.
+        let headFit = headRestToFitted()
+        let shoulderFit = shoulderRestToFitted()
         var scalePivots: [AssetEntry.Kind: Entity] = [:]
 
         for (_, entry) in manifest.assets.sorted(by: { $0.key < $1.key }) {
@@ -108,17 +113,35 @@ extension BustEntity {
                 // library/<prim>.usdz 에는 그 메시 하나뿐이니 그 루트의 모델 엔티티가 곧 이 에셋이다(실측 2026-10-07: Shoulders_shirt).
                 modelEntity = merged; prim = merged
             }
-            guard let modelEntity else { item.note = "ModelComponent 없음"; continue }
+            guard var modelEntity else { item.note = "ModelComponent 없음"; continue }
+            if entry.kind != .eye && entry.kind != .mouth, modelEntity.components[SkeletalPosesComponent.self] != nil, let mc = modelEntity.components[ModelComponent.self] {
+                // 스킨 메시(셔츠)는 RealityKit 이 스켈레톤 포즈로 그린다. 아래에서 메시를 uv1 포함 LowLevelMesh 로 갈아 끼우면 스키닝
+                // 데이터가 없어지므로, 스켈레톤 없는 일반 ModelEntity 로 옮겨 **바인드 좌표 그대로** 그린다(지금은 어차피 스키닝을
+                // 안 쓴다 — 머리말 "스키닝은 M5", 머리 회전은 `model.transform` 이 통째로 돌린다). 눈·입안은 그대로 둔다(블렌드셰이프).
+                let plain = ModelEntity(mesh: mc.mesh, materials: mc.materials)
+                plain.name = "\(entry.prim)_bind"
+                plain.transform = Transform(matrix: modelEntity.transformMatrix(relativeTo: nil))
+                root.addChild(plain)
+                modelEntity.removeFromParent()
+                modelEntity = plain; prim = plain
+            }
             item.triangles = Self.triangleCount(of: modelEntity)
             if let exp = entry.triangleCount, exp > 0, exp != item.triangles { item.note = "삼각형 수 불일치(매니페스트 \(exp))" }
 
             // 흉상 공간 변환(USD 스테이지·아마추어 변환 포함) — root 는 아직 부모가 없으므로 nil 기준 = root 포함.
             let toBust = prim.transformMatrix(relativeTo: nil)
             let meshToBust = modelEntity.transformMatrix(relativeTo: nil)
-            Self.bakePresenceUV1(into: modelEntity, meshToBust: meshToBust, params: manifest.presence, headJoint: headJointRest, presence: look.presenceEnabled)
-            // 헤어: 두피 캡(faceRanges.cap)을 별도 파트로 떼어 어둡게 — 캡 칸 텍스처가 카드보다 밝아 정수리에 회색 판이 비쳤다(실측 2026-10-08).
-            if entry.kind == .hair, let cap = entry.faceRanges?["cap"], !cap.ranges.isEmpty {
-                Self.splitTriangleRanges(of: modelEntity, ranges: cap.ranges, materialIndex: 1)
+            // 헤어: 두피 캡(faceRanges.cap) 테두리(= 헤어라인·구레나룻·목덜미)를 `hairlineFadeWidth` 폭으로 투명하게 녹여
+            // 이마 피부가 머리카락 속으로 서서히 이어지게 한다 — 캡 가장자리가 직선으로 딱 끊겨 가발처럼 보였다(실측 2026-10-08).
+            let capRanges = (entry.kind == .hair) ? (entry.faceRanges?["cap"]?.ranges ?? []) : []
+            if entry.kind != .eye && entry.kind != .mouth {
+                // 헤어·셔츠: uv1(presence × 헤어라인 페이드, height01)을 LowLevelMesh 로 다시 굽고, 두피 캡은 별도 파트(머티리얼 1)로 —
+                // 캡 칸 텍스처가 카드보다 밝아 정수리에 회색 판이 비쳤다(실측 2026-10-08). 헤어라인 페이드: 캡 테두리(=헤어라인)에서
+                // `hairlineFadeWidth` 안의 정점(카드 뿌리 포함)을 투명하게 녹여 이마 피부가 머리카락으로 서서히 이어지게 한다.
+                if !Self.bakePresenceUV1(into: modelEntity, meshToBust: meshToBust, params: manifest.presence, headJoint: headJointRest, presence: look.presenceEnabled,
+                                         edgeFadeRanges: capRanges, edgeFadeWidth: look.hairlineFadeWidth, splitRanges: capRanges, splitMaterialIndex: 1) {
+                    item.note += (item.note.isEmpty ? "" : " · ") + "uv1 굽기 실패(블렌더 uv1 사용)"
+                }
             }
 
             switch entry.kind {
@@ -149,18 +172,33 @@ extension BustEntity {
                 mouthAttached = true
             default:
                 // Head 강체(헤어·안경·수염) 와 Root·Neck 스킨(셔츠) 모두 지금은 model 아래 — 머리말 참고.
-                // headScale ≈ 1(사진 등급)이면 기존과 동일(피벗이 항등). ≠ 1(A 등급)이면 Head 조인트 레스트를
-                // 축으로 균일 스케일(위 주석 참고).
+                // 피벗 변환 = 레스트 흉상 → 피팅 흉상(위 주석). 사진 등급이면 거의 항등이라 기존과 같다.
+                let isShoulders = entry.kind == .shoulders
                 let pivot = scalePivots[entry.kind] ?? {
-                    let p = Entity(); p.name = "PersonaScalePivot_\(entry.kind.rawValue)"
-                    p.position = headJointRest; p.scale = SIMD3(repeating: headScale)
+                    let p = Entity(); p.name = "PersonaFitPivot_\(entry.kind.rawValue)"
+                    p.transform = isShoulders
+                        ? Transform(scale: shoulderFit.scale, rotation: simd_quatf(ix: 0, iy: 0, iz: 0, r: 1), translation: shoulderFit.offset)
+                        : Transform(scale: SIMD3(repeating: headFit.scale), rotation: headFit.rotation, translation: headFit.translation)
                     model.addChild(p); scalePivots[entry.kind] = p
                     return p
                 }()
-                Self.reparent(prim, under: pivot, matrix: toBust, restCenter: headJointRest)
-                if headScale != 1 { item.note += (item.note.isEmpty ? "" : " · ") + String(format: "머리 전체 스케일 ×%.3f", headScale) }
+                Self.reparent(prim, under: pivot, matrix: toBust, restCenter: .zero)
+                item.note += (item.note.isEmpty ? "" : " · ") + (isShoulders
+                    ? String(format: "어깨 맞춤 ×(%.3f, %.3f, %.3f)", shoulderFit.scale.x, shoulderFit.scale.y, shoulderFit.scale.z)
+                    : String(format: "두피 유사변환 ×%.3f 이동 %.0f mm", headFit.scale, simd_length(headFit.translation) * 1000))
             }
-            await Self.applyMaterials(to: modelEntity, entry: entry, look: look, textures: textures, shader: shader)
+            if entry.kind == .shoulders, shader != nil {
+                // 셔츠: 하단 페이드 있는/없는 두 벌을 만들어 두고 유령 룩 상태에 따라 바꿔 끼운다(`applyClothFade`).
+                // 유령 룩이 꺼지면 하단 페이드뿐 아니라 프레넬도 끈다 — 흉상이 불투명한데 셔츠 가장자리·밑단만 비치면 그 뒤 피부가
+                // 테두리 빛·밑단 띠로 드러났다(시뮬레이터 검수 2026-10-08).
+                var solidLook = look; solidLook.shirtFadeHeight01 = .zero; solidLook.fresnelStrength = 0
+                let faded = await Self.materials(for: modelEntity, entry: entry, look: look, textures: textures, shader: shader)
+                let solid = await Self.materials(for: modelEntity, entry: entry, look: solidLook, textures: textures, shader: shader)
+                clothFadeSwap.append((modelEntity, faded, solid))
+                if var mc = modelEntity.components[ModelComponent.self] { mc.materials = ghostLookOn ? faded : solid; modelEntity.components.set(mc) }
+            } else {
+                await Self.applyMaterials(to: modelEntity, entry: entry, look: look, textures: textures, shader: shader)
+            }
             item.attached = true
         }
 
@@ -170,6 +208,36 @@ extension BustEntity {
             updateMouthInner(lastWeights)
         }
         return report
+    }
+
+    // MARK: 레스트 → 피팅 변환 (헤어·셔츠 배치)
+
+    /// 두피(Scalp 그룹) 정점의 레스트 → 피팅 유사변환. Head 강체 에셋(헤어·안경·수염)을 피팅된 머리에 그대로 얹는 변환이다.
+    /// 그룹이 없거나 퇴화하면 항등. (실측 A 등급: 스케일 1.046 · 회전 0.2° · 이동 (−1, −25, −12) mm · RMS 2.3 mm.)
+    func headRestToFitted() -> SimilarityTransform {
+        let ids = template.manifest.group(.scalp).filter { $0 < restPositions.count && $0 < template.positions.count }
+        guard ids.count >= 3 else { return .identity }
+        return Procrustes.fit(source: ids.map { restPositions[$0] }, target: ids.map { template.positions[$0] }, allowScale: true) ?? .identity
+    }
+
+    /// 어깨(Shoulders 그룹) 정점의 레스트 → 피팅 **축별** 스케일+이동(최소제곱, b = s·a + d). `HeadPropagator` 가 어깨를
+    /// x·z 만 넓히므로(y 그대로) 유사변환이 아니라 축별로 읽어야 셔츠 어깨 경사선이 흉상과 같은 높이에 남는다.
+    func shoulderRestToFitted() -> (scale: SIMD3<Float>, offset: SIMD3<Float>) {
+        let ids = template.manifest.group(.shoulders).filter { $0 < restPositions.count && $0 < template.positions.count }
+        guard ids.count >= 3 else { return (.one, .zero) }
+        var scale = SIMD3<Float>.one, offset = SIMD3<Float>.zero
+        let n = Float(ids.count)
+        for axis in 0..<3 {
+            var sa: Float = 0, sb: Float = 0, saa: Float = 0, sab: Float = 0
+            for i in ids { let a = restPositions[i][axis], b = template.positions[i][axis]; sa += a; sb += b; saa += a * a; sab += a * b }
+            let den = n * saa - sa * sa
+            guard abs(den) > 1e-9 else { continue }
+            let s = (n * sab - sa * sb) / den
+            guard s.isFinite, s > 0.5, s < 2 else { continue }
+            scale[axis] = s
+            offset[axis] = (sb - s * sa) / n
+        }
+        return (scale, offset)
     }
 
     // MARK: 부착 헬퍼
@@ -201,88 +269,168 @@ extension BustEntity {
         e.transform = Transform(matrix: back * matrix)
     }
 
-    /// 첫 파트에서 삼각형 구간(`faceRanges`, 블렌더 삼각형 번호 — USD 가져오기가 면 순서를 보존한다는 전제)을 떼어
-    /// `materialIndex` 파트로 만든다. 한 머티리얼 슬롯으로 나온 에셋의 일부(두피 캡)를 다른 머티리얼로 그리기 위해.
-    static func splitTriangleRanges(of entity: Entity, ranges: [Range<Int>], materialIndex: Int) {
-        guard var mc = entity.components[ModelComponent.self], !ranges.isEmpty else { return }
-        var contents = mc.mesh.contents
-        var models = [MeshResource.Model](), did = false
-        for model in contents.models {
-            var parts = [MeshResource.Part]()
-            for part in model.parts {
-                guard !did, let tri = part.triangleIndices?.elements else { parts.append(part); continue }
-                let triCount = tri.count / 3
-                var inRange = [Bool](repeating: false, count: triCount)
-                for r in ranges { for t in r where t >= 0 && t < triCount { inRange[t] = true } }
-                var rest = [UInt32](), picked = [UInt32]()
-                rest.reserveCapacity(tri.count); picked.reserveCapacity(tri.count)
-                for t in 0..<triCount {
-                    let s = t * 3
-                    if inRange[t] { picked.append(contentsOf: tri[s..<s + 3]) } else { rest.append(contentsOf: tri[s..<s + 3]) }
-                }
-                guard !picked.isEmpty, !rest.isEmpty else { parts.append(part); continue }
-                var a = part; a.triangleIndices = MeshBuffer(rest)
-                var b = part; b.id = part.id + "_range\(materialIndex)"; b.triangleIndices = MeshBuffer(picked); b.materialIndex = materialIndex
-                parts.append(a); parts.append(b); did = true
-            }
-            var m = model; m.parts = MeshPartCollection(parts); models.append(m)
+    /// 에셋 메시를 `LowLevelMesh`(position·normal·uv0·**uv1**) 로 다시 만든다 — uv1 = (presence × 헤어라인 페이드, height01).
+    ///
+    /// 왜 LowLevelMesh 인가(2026-10-08 실측): `MeshResource.Part.textureCoordinates1` 에 써서 `MeshResource.generate` 로 다시 만들면
+    /// `mesh.contents` 에는 값이 들어 있는데 **셰이더 `geo.uv1()` 에는 닿지 않았다** — 셔츠 uv1.x 를 전부 0 으로 구워도 셔츠가
+    /// 그대로 그려졌고, 렌더에 쓰인 건 USD 에서 온(블렌더가 구운) uv1 이었다. 그래서 "턴테이블에선 presence 끔"·셔츠 하단 페이드
+    /// 끄기·헤어라인 페이드가 전부 조용히 무시되고, 유령 룩을 꺼도 셔츠가 블렌더 presence 의 z 페이드(0.06→0.20 m)로 아래가
+    /// 투명했다. `LowLevelMesh` 의 `.uv1` 시맨틱은 "셰이더가 읽을 수 있는 범용 데이터"로 문서화돼 있어 이 경로를 쓴다.
+    ///
+    /// `splitRanges`(첫 파트의 삼각형 번호, 블렌더 faceRanges) 가 있으면 그 삼각형들을 `splitMaterialIndex` 파트로 떼어낸다(두피 캡).
+    /// 스키닝·블렌드셰이프는 잃는다 — 헤어·셔츠(강체 근사, "스키닝은 M5")에만 쓰고 눈·입안은 건드리지 않는다.
+    @discardableResult
+    static func bakePresenceUV1(into entity: Entity, meshToBust: simd_float4x4, params: PresenceParams, headJoint: SIMD3<Float>, presence: Bool = true,
+                                edgeFadeRanges: [Range<Int>] = [], edgeFadeWidth: Float = 0,
+                                splitRanges: [Range<Int>] = [], splitMaterialIndex: Int = 1) -> Bool {
+        guard var mc = entity.components[ModelComponent.self], let model = mc.mesh.contents.models.first else { return false }
+        // 1) 파트들을 하나의 정점 배열로 모은다(파트마다 정점 버퍼가 따로라 오프셋을 더한다).
+        var positions: [SIMD3<Float>] = [], normals: [SIMD3<Float>] = [], uv0: [SIMD2<Float>] = []
+        var triLists: [(indices: [UInt32], materialIndex: Int)] = []
+        var missingNormals = false
+        for part in model.parts {
+            let base = UInt32(positions.count)
+            let p = part.positions.elements
+            positions.append(contentsOf: p)
+            if let n = part.normals?.elements, n.count == p.count { normals.append(contentsOf: n) } else { normals.append(contentsOf: [SIMD3<Float>](repeating: SIMD3(0, 1, 0), count: p.count)); missingNormals = true }
+            if let t = part.textureCoordinates?.elements, t.count == p.count { uv0.append(contentsOf: t) } else { uv0.append(contentsOf: [SIMD2<Float>](repeating: .zero, count: p.count)) }
+            let tri = (part.triangleIndices?.elements ?? []).map { $0 + base }
+            triLists.append((tri, part.materialIndex))
         }
-        guard did else { return }
-        contents.models = MeshModelCollection(models)
-        guard let mesh = try? MeshResource.generate(from: contents) else { return }
+        guard !positions.isEmpty, !triLists.isEmpty else { return false }
+        if missingNormals {
+            let all = triLists.flatMap(\.indices)
+            normals = Geometry.vertexNormals(positions: positions, indices: all)
+        }
+        // 2) uv1 — bust 공간에서 presence·height01, 첫 파트 기준 헤어라인 페이드.
+        let bustPositions = positions.map { Geometry.transformPoint(meshToBust, $0) }
+        var uv1 = bustPositions.map { q -> SIMD2<Float> in SIMD2(presence ? params.presence(at: q, headJoint: headJoint) : 1, params.height01(at: q)) }
+        if edgeFadeWidth > 0, !edgeFadeRanges.isEmpty {
+            let fades = edgeFade(positions: bustPositions, triangles: triLists[0].indices, ranges: edgeFadeRanges, width: edgeFadeWidth,
+                                 headCenter: params.headCenter(headJoint: headJoint))
+            for (v, f) in fades { uv1[v].x *= f }
+        }
+        // 3) 첫 파트에서 두피 캡 분리.
+        if !splitRanges.isEmpty {
+            let tri = triLists[0].indices, triCount = tri.count / 3
+            var inRange = [Bool](repeating: false, count: triCount)
+            for r in splitRanges { for t in r where t >= 0 && t < triCount { inRange[t] = true } }
+            var rest = [UInt32](), picked = [UInt32]()
+            rest.reserveCapacity(tri.count); picked.reserveCapacity(tri.count)
+            for t in 0..<triCount { let s = t * 3; if inRange[t] { picked.append(contentsOf: tri[s..<s + 3]) } else { rest.append(contentsOf: tri[s..<s + 3]) } }
+            if !picked.isEmpty, !rest.isEmpty {
+                triLists[0].indices = rest
+                triLists.insert((picked, splitMaterialIndex), at: 1)
+            }
+        }
+        // 4) LowLevelMesh.
+        let indices = triLists.flatMap(\.indices)
+        var desc = LowLevelMesh.Descriptor()
+        desc.vertexAttributes = [
+            .init(semantic: .position, format: .float3, layoutIndex: 0, offset: 0),
+            .init(semantic: .normal, format: .float3, layoutIndex: 1, offset: 0),
+            .init(semantic: .uv0, format: .float2, layoutIndex: 2, offset: 0),
+            .init(semantic: .uv1, format: .float2, layoutIndex: 3, offset: 0),
+        ]
+        desc.vertexLayouts = [.init(bufferIndex: 0, bufferStride: 12), .init(bufferIndex: 1, bufferStride: 12), .init(bufferIndex: 2, bufferStride: 8), .init(bufferIndex: 3, bufferStride: 8)]
+        desc.vertexCapacity = positions.count
+        desc.indexCapacity = indices.count
+        desc.indexType = .uint32
+        guard let llm = try? LowLevelMesh(descriptor: desc) else { return false }
+        BustEntity.fill(llm, bufferIndex: 0, with: positions)
+        BustEntity.fill(llm, bufferIndex: 1, with: normals)
+        llm.withUnsafeMutableBytes(bufferIndex: 2) { raw in let p = raw.bindMemory(to: SIMD2<Float>.self); for (i, v) in uv0.enumerated() { p[i] = v } }
+        llm.withUnsafeMutableBytes(bufferIndex: 3) { raw in let p = raw.bindMemory(to: SIMD2<Float>.self); for (i, v) in uv1.enumerated() { p[i] = v } }
+        llm.withUnsafeMutableIndices { raw in let p = raw.bindMemory(to: UInt32.self); for (i, v) in indices.enumerated() { p[i] = v } }
+        var parts: [LowLevelMesh.Part] = []
+        var offset = 0
+        for list in triLists where !list.indices.isEmpty {
+            var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+            for v in list.indices { lo = simd_min(lo, positions[Int(v)]); hi = simd_max(hi, positions[Int(v)]) }
+            parts.append(LowLevelMesh.Part(indexOffset: offset * MemoryLayout<UInt32>.size, indexCount: list.indices.count, topology: .triangle,
+                                           materialIndex: list.materialIndex, bounds: BoundingBox(min: lo, max: hi)))
+            offset += list.indices.count
+        }
+        llm.parts.replaceAll(parts)
+        guard let mesh = try? MeshResource(from: llm) else { return false }
         mc.mesh = mesh
-        while mc.materials.count <= materialIndex { mc.materials.append(mc.materials.last ?? SimpleMaterial()) }
+        let needed = (parts.map(\.materialIndex).max() ?? 0) + 1
+        while mc.materials.count < needed { mc.materials.append(mc.materials.last ?? SimpleMaterial()) }
         entity.components.set(mc)
+        return true
     }
 
-    /// `MeshResource.Part.textureCoordinates1`(uv1 쓰기)은 OS 27+ — 그 아래에선 presence 셰이더를 못 쓰고 PBR 폴백.
-    static var canBakeUV1: Bool {
-        if #available(macOS 27, iOS 27, *) { return true }
-        return false
-    }
-
-    /// uv1 = (presence, height01) 을 bust 공간 정점으로 굽는다(AssetContract §5 식 — `PresenceParams`).
-    static func bakePresenceUV1(into entity: Entity, meshToBust: simd_float4x4, params: PresenceParams, headJoint: SIMD3<Float>, presence: Bool = true) {
-        guard #available(macOS 27, iOS 27, *) else { return }
-        guard var mc = entity.components[ModelComponent.self] else { return }
-        var contents = mc.mesh.contents
-        var changed = false
-        var models = [MeshResource.Model]()
-        for model in contents.models {
-            var parts = [MeshResource.Part]()
-            for var part in model.parts {
-                let uv1 = part.positions.elements.map { p -> SIMD2<Float> in
-                    let q = Geometry.transformPoint(meshToBust, p)
-                    return SIMD2(presence ? params.presence(at: q, headJoint: headJoint) : 1, params.height01(at: q))
-                }
-                part.textureCoordinates1 = MeshBuffer(uv1)
-                parts.append(part); changed = true
-            }
-            var m = model
-            m.parts = MeshPartCollection(parts)
-            models.append(m)
+    /// 헤어라인 페이드 계수: `ranges` 의 삼각형들이 이루는 조각(두피 캡)의 **테두리**(한 삼각형에만 속한 변) 중 앞·옆쪽
+    /// (머리 중심 기준 뒤쪽 90° 는 제외 — 목덜미에서 긴 머리 뿌리가 비치지 않게)에서 `width` 안에 있는 **모든** 정점(캡뿐
+    /// 아니라 거기서 자라는 카드 뿌리까지)에 0(테두리)…1(`width`) 계수를 준다. 범위 밖 정점은 돌려주지 않는다(계수 1).
+    static func edgeFade(positions: [SIMD3<Float>], triangles tri: [UInt32], ranges: [Range<Int>], width: Float, headCenter: SIMD3<Float>) -> [(Int, Float)] {
+        let triCount = tri.count / 3
+        var edgeCount: [UInt64: Int] = [:]
+        func key(_ a: Int, _ b: Int) -> UInt64 { UInt64(min(a, b)) << 32 | UInt64(max(a, b)) }
+        for r in ranges { for t in r where t >= 0 && t < triCount {
+            let a = Int(tri[t * 3]), b = Int(tri[t * 3 + 1]), c = Int(tri[t * 3 + 2])
+            edgeCount[key(a, b), default: 0] += 1; edgeCount[key(b, c), default: 0] += 1; edgeCount[key(c, a), default: 0] += 1
+        } }
+        let boundary: [(SIMD3<Float>, SIMD3<Float>)] = edgeCount.compactMap { k, n in
+            guard n == 1 else { return nil }
+            let a = Int(k >> 32), b = Int(k & 0xffff_ffff)
+            guard a < positions.count, b < positions.count else { return nil }
+            let mid = (positions[a] + positions[b]) * 0.5
+            let d = SIMD2<Float>(mid.x - headCenter.x, mid.z - headCenter.z)
+            let n2 = simd_length(d)
+            let facing: Float = n2 > 1e-6 ? d.y / n2 : 1    // +Z(정면) 1 … 뒤 −1
+            return facing > -0.2 ? (positions[a], positions[b]) : nil
         }
-        guard changed else { return }
-        contents.models = MeshModelCollection(models)
-        if let mesh = try? MeshResource.generate(from: contents) {
-            mc.mesh = mesh
-            entity.components.set(mc)
+        guard !boundary.isEmpty else { return [] }
+        // 테두리 경계상자 + width 밖은 거를 수 있다(카드 2.5만 정점 × 테두리 변 수백).
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+        for (a, b) in boundary { lo = simd_min(lo, simd_min(a, b)); hi = simd_max(hi, simd_max(a, b)) }
+        lo -= SIMD3(repeating: width); hi += SIMD3(repeating: width)
+        func distanceToSegment(_ p: SIMD3<Float>, _ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float {
+            let ab = b - a, l2 = simd_length_squared(ab)
+            let t = l2 > 1e-12 ? min(1, max(0, simd_dot(p - a, ab) / l2)) : 0
+            return simd_length(p - (a + ab * t))
         }
+        var out: [(Int, Float)] = []
+        for (v, p) in positions.enumerated() {
+            guard all(p .>= lo) && all(p .<= hi) else { continue }
+            var d = Float.greatestFiniteMagnitude
+            for (a, b) in boundary { d = min(d, distanceToSegment(p, a, b)); if d <= 0 { break } }
+            guard d < width else { continue }
+            out.append((v, PresenceParams.smoothstep(0, width, d)))
+        }
+        return out
     }
 
     // MARK: 머티리얼 (역할별, 앱이 색·불투명도를 정한다)
 
     static func applyMaterials(to entity: Entity, entry: AssetEntry, look: PersonaLook, textures: PersonaTextureCache, shader: PersonaSurfaceShader?) async {
         guard var mc = entity.components[ModelComponent.self] else { return }
+        mc.materials = await materials(for: entity, entry: entry, look: look, textures: textures, shader: shader)
+        entity.components.set(mc)
+    }
+
+    /// 엔티티의 슬롯 수만큼 역할별 머티리얼을 만든다(적용은 호출자가).
+    static func materials(for entity: Entity, entry: AssetEntry, look: PersonaLook, textures: PersonaTextureCache, shader: PersonaSurfaceShader?) async -> [Material] {
+        guard let mc = entity.components[ModelComponent.self] else { return [] }
         var out: [Material] = []
         for i in mc.materials.indices {
-            // 헤어의 추가 파트(splitTriangleRanges 로 뗀 두피 캡)는 슬롯 밖 인덱스 → 전용 역할.
+            // 헤어의 추가 파트(bakePresenceUV1 이 뗀 두피 캡)는 슬롯 밖 인덱스 → 전용 역할.
             let role = (entry.kind == .hair && i >= 1) ? "hair_cap" : entry.role(forSlot: i)
             out.append(await material(role: role, entry: entry, look: look, textures: textures, shader: shader))
         }
         if out.isEmpty { out = [await material(role: entry.role(forSlot: 0), entry: entry, look: look, textures: textures, shader: shader)] }
-        mc.materials = out
-        entity.components.set(mc)
+        return out
+    }
+
+    /// 유령 룩 on/off 에 맞춰 셔츠 하단 페이드를 켜고 끈다 — 유령 룩이 꺼진(흉상이 불투명한) 상태에서 셔츠만 아래로 투명해지면
+    /// 그 아래 피부색 몸통이 비쳐 "셔츠 아래가 맨살" 로 보였다(시뮬레이터 검수 2026-10-08). `setGhostLook` 이 부른다.
+    func applyClothFade(ghost on: Bool) {
+        for swap in clothFadeSwap {
+            guard var mc = swap.entity.components[ModelComponent.self] else { continue }
+            mc.materials = on ? swap.faded : swap.solid
+            swap.entity.components.set(mc)
+        }
     }
 
     static func material(role: String, entry: AssetEntry, look: PersonaLook, textures: PersonaTextureCache, shader: PersonaSurfaceShader?) async -> Material {
@@ -319,7 +467,9 @@ extension BustEntity {
             let capWhite = base == nil ? await textures.white() : nil
             if let shader, let tex = base ?? capWhite {
                 pbr.baseColor = .init(tint: color(tint), texture: .init(tex))
-                if let cm = shader.makeMaterial(from: pbr, fresnel: look.fresnelStrength, fade: .zero, baseOpacity: look.baseOpacity, opacityThreshold: nil) { return cm }
+                // 프레넬 0: 정면 카메라에서 정수리 캡은 거의 스치는 각이라 프레넬 가장자리 소멸이 캡 전체를 반투명하게 만들어
+                // 검은 무대가 비쳐 가르마 자리에 어두운 네모 판으로 보였다(시뮬레이터 검수 2026-10-08). 두피는 불투명해야 맞다.
+                if let cm = shader.makeMaterial(from: pbr, fresnel: 0, fade: .zero, baseOpacity: look.baseOpacity, opacityThreshold: nil) { return cm }
             }
             return pbr
         case "cloth":
