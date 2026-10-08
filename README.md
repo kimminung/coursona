@@ -133,6 +133,12 @@
 
 ### Persona 룩 — 블렌더 에셋을 붙인 실제 렌더 (2026-10-08)
 
+짧은 데모 영상(iPhone, 유튜브 쇼츠):
+
+<a href="https://youtube.com/shorts/EZWZFZDAxVA?feature=share">
+  <img src="https://markdown-videos-api.jorgenkh.no/youtube/EZWZFZDAxVA?width=260&height=462" alt="나만의 3D 페르소나 흉상 만들기(클로드 페이블과 함께, 블렌더도) — 재생하려면 클릭" width="260">
+</a>
+
 디자인 PRD(「Coursona 디자인 PRD — 비전프로 Persona 재현 에셋」)의 헤어·셔츠·눈알·입안 에셋을 **이 리포에서 Blender 5.2 헤드리스로 직접 만들어 내보내고**(`Docs/coursona_blender/`, 초상 `.blend` 사본에서 실행), `Default.coursonatemplate` 에 넣어 Mac 앱이 그린 것이다. 아래는 Mac 카메라(B 등급) 7컷으로 만든 코르소나를 검사 화면에서 그대로 캡처한 것 — 목업이 아니다. 머리색은 사진에서 잰 값(틴트 ÷ 0.63), 셔츠는 네이비 칼라 셔츠(단추·플래킷), 하단은 셰이더 페이드, 눈알·입안은 실제 메시다.
 
 | 레퍼런스(Apple Persona) · 코르소나 정면 · ¾ |
