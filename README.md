@@ -1,3 +1,11 @@
+
+
+https://github.com/user-attachments/assets/47bf06e9-a413-406c-b414-5386c1dedd27
+
+
+https://github.com/user-attachments/assets/32767fcd-a516-402d-b732-cbc1e46a2ffa
+
+
 # 코르소나 (Coursona)
 
 **콜슨이 만든 페르소나** — iPhone·iPad·Mac 에서 내 촬영본으로 만드는 3D 흉상 페르소나. Vision Pro 의 페르소나처럼 내 표정·고개·목소리를 따라 움직이지만, 온디바이스로만 동작하고 세 플랫폼 전부에서 쓸 수 있다.
