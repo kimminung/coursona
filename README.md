@@ -14,11 +14,15 @@ https://github.com/user-attachments/assets/32767fcd-a516-402d-b732-cbc1e46a2ffa
 
 ## 소개 영상
 
-| 코르소나 소개 (52초) | 얼굴이 되기까지 — 소반 → 초상 → 코르소나 (1분 24초) |
-|---|---|
-| [![코르소나 소개 영상 — 내 기기 안에서 숨 쉬는, 나의 페르소나](Docs/video/coursona-intro-poster.jpg)](Docs/video/coursona-intro.mp4) | [![얼굴이 되기까지 — 세 프로젝트의 변화 과정](Docs/video/evolution-poster.jpg)](Docs/video/evolution.mp4) |
+**코르소나 소개** (52초)
 
-1080p · 배경음 포함. 이미지를 누르면 영상 파일로 이동한다. 두 번째 영상은 [소반](https://github.com/kimminung/Soban)의 종이 인형 카드와 스플랫에서 [초상](https://github.com/kimminung/Chosang)의 흉상을 거쳐 코르소나의 페르소나에 이르기까지, 세 프로젝트를 이어 가며 얼굴이 바뀌어 온 과정을 담았다.
+[![코르소나 소개 영상 — 내 기기 안에서 숨 쉬는, 나의 페르소나](Docs/video/coursona-intro.gif)](Docs/video/coursona-intro.mp4)
+
+**얼굴이 되기까지 — 소반 → 초상 → 코르소나** (1분 24초)
+
+[![얼굴이 되기까지 — 세 프로젝트의 변화 과정](Docs/video/evolution.gif)](Docs/video/evolution.mp4)
+
+미리보기(GIF)를 누르면 1080p · 배경음이 들어간 원본 영상으로 이동한다. 두 번째 영상은 [소반](https://github.com/kimminung/Soban)의 종이 인형 카드와 스플랫에서 [초상](https://github.com/kimminung/Chosang)의 흉상을 거쳐 코르소나의 페르소나에 이르기까지, 세 프로젝트를 이어 가며 얼굴이 바뀌어 온 과정을 담았다.
 
 ## 한 줄 요약
 
